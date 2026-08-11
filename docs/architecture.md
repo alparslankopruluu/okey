@@ -36,10 +36,11 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 
 ## Domain and state
 
-- `Tile`, `Rack`, `Meld`, `GameVariant`, `GameState`, `GameCommand`, and `GameEvent` are immutable serializable types. A completed state records `roundEndReason` as either a legal finish or wall exhaustion; only a legal finish has `winnerId`.
-- Commands are validated and reduced to events; state changes only by applying events.
+- `Tile`, `Rack`, `Meld`, `TableMeld`, `GameVariant`, `GameState`, `GameCommand`, `GameEvent`, and `RoundSettlement` are immutable serializable types. A completed state records `roundEndReason` as either a legal finish or wall exhaustion; only a legal finish has `winnerId`.
+- Commands are validated by one pure reducer. Opening and layoff commands move the exact physical tiles from a rack into owned table melds; terminal commands also attach per-player settlement entries.
+- The exact-cover solver discovers a canonical winning partition independent of UI/rack order. The same helper drives the bot and changes the user’s selected-discard action to a legal finish when the remainder is complete.
 - Seeded PRNG controls shuffle and bot tie-breaking. Replay is `(initial seed + ordered commands/events)`.
-- The deterministic bot-round runner is bounded to 512 commands. If nobody submits a legal finish, the final discard after the last wall draw closes the round as a draw instead of leaving the next player on an empty source.
+- The deterministic bot-round runner is bounded to 512 commands. Bots attempt legal finish, 101 opening, table layoff, and finish again before choosing a discard. If nobody can finish, the final discard after the last wall draw closes the round as a draw instead of leaving the next player on an empty source.
 - Wall-clock time enters only as explicit command metadata; game rules never read ambient time.
 - Zustand owns UI preferences/session projection, never authoritative rules or wallet balance.
 

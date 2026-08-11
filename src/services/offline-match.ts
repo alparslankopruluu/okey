@@ -1,8 +1,20 @@
-import type { GamePhase, GameState, GameVariant, PlayerState, RoundEndReason, RuleConfig, Tile, TileValue } from '@luma/game-core';
+import {
+  settleRound,
+  validateMeld,
+  type GamePhase,
+  type GameState,
+  type GameVariant,
+  type PlayerState,
+  type RoundEndReason,
+  type RoundSettlement,
+  type RuleConfig,
+  type TableMeld,
+  type Tile,
+  type TileValue,
+} from '@luma/game-core';
 
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
 const PHASES: readonly GamePhase[] = ['awaiting_draw', 'awaiting_discard', 'round_finished'];
-const ROUND_END_REASONS: readonly RoundEndReason[] = ['finish', 'wall_exhausted'];
 const COLORS = new Set(['red', 'blue', 'black', 'yellow']);
 
 type MatchIdentity = Pick<GameState, 'gameId' | 'variant' | 'seed'>;
@@ -51,7 +63,38 @@ function isPlayer(value: unknown): value is PlayerState {
     && isUnknownArray(value.rack)
     && value.rack.every(isTile)
     && typeof value.opened === 'boolean'
+    && (value.openingMode === undefined || value.openingMode === 'melds' || value.openingMode === 'pairs')
     && typeof value.roundScore === 'number';
+}
+
+function isTableMeld(value: unknown): value is TableMeld {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.ownerId === 'string'
+    && (value.kind === 'sequence' || value.kind === 'set' || value.kind === 'pair')
+    && isUnknownArray(value.tiles)
+    && value.tiles.every(isTile);
+}
+
+function isSettlement(value: unknown, players: readonly PlayerState[], reason: RoundEndReason, winnerId?: string): value is RoundSettlement {
+  if (!isRecord(value)
+    || (value.profile !== 'classic-standard-v1' && value.profile !== '101-fixed-open-v1')
+    || value.reason !== reason
+    || value.winnerId !== winnerId
+    || (value.finishStyle !== undefined
+      && (typeof value.finishStyle !== 'string'
+        || !['normal', 'joker', 'pairs', 'pairs_joker', 'hand', 'hand_joker', 'seven_pairs'].includes(value.finishStyle)))
+    || !isUnknownArray(value.entries)
+    || value.entries.length !== players.length) return false;
+  const playerIds = new Set(players.map((player) => player.id));
+  const entryIds = value.entries.flatMap((entry) => isRecord(entry) && typeof entry.playerId === 'string' ? [entry.playerId] : []);
+  return new Set(entryIds).size === players.length && value.entries.every((entry) => isRecord(entry)
+    && typeof entry.playerId === 'string'
+    && playerIds.has(entry.playerId)
+    && typeof entry.delta === 'number'
+    && typeof entry.deadwood === 'number'
+    && typeof entry.opened === 'boolean'
+    && typeof entry.winner === 'boolean');
 }
 
 function isTileValue(value: unknown): value is TileValue {
@@ -78,6 +121,7 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
     || typeof value.turnIndex !== 'number'
     || !isUnknownArray(value.wall)
     || !isUnknownArray(value.discards)
+    || !isUnknownArray(value.tableMelds)
     || !isUnknownArray(value.players)
     || value.players.length !== 4
     || !isTile(value.indicatorTile)
@@ -89,23 +133,40 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
   const players = value.players;
   const wall = value.wall;
   const discards = value.discards;
+  const tableMelds = value.tableMelds;
   const commandIds = value.processedCommandIds;
   const commandFingerprints = value.processedCommandFingerprints;
 
   if (!Number.isInteger(value.dealerIndex) || value.dealerIndex < 0 || value.dealerIndex >= players.length
     || !Number.isInteger(value.turnIndex) || value.turnIndex < 0 || value.turnIndex >= players.length) return false;
 
-  if (!players.every(isPlayer) || !wall.every(isTile) || !discards.every(isTile)) return false;
+  if (!players.every(isPlayer) || !wall.every(isTile) || !discards.every(isTile) || !tableMelds.every(isTableMeld)) return false;
+  if (tableMelds.some((meld) => !players.some((player) => player.id === meld.ownerId))) return false;
+  if (identity.variant === 'classic' && tableMelds.length > 0) return false;
+  if (new Set(tableMelds.map((meld) => meld.id)).size !== tableMelds.length) return false;
+  if (players.some((player) => player.opened !== (player.openingMode !== undefined))) return false;
+  try {
+    for (const meld of tableMelds) {
+      validateMeld({ kind: meld.kind, tileIds: meld.tiles.map((tile) => tile.id) }, meld.tiles, value.indicator);
+    }
+  } catch {
+    return false;
+  }
 
   const roundEndReason = value.roundEndReason;
   const winnerId = value.winnerId;
-  if (roundEndReason !== undefined
-    && (typeof roundEndReason !== 'string' || !ROUND_END_REASONS.includes(roundEndReason as RoundEndReason))) return false;
+  if (roundEndReason !== undefined && roundEndReason !== 'finish' && roundEndReason !== 'wall_exhausted') return false;
   if (winnerId !== undefined && (typeof winnerId !== 'string' || !players.some((player) => player.id === winnerId))) return false;
   if (value.phase === 'round_finished') {
     if (roundEndReason === undefined) return false;
     if ((roundEndReason === 'finish') !== (winnerId !== undefined)) return false;
-  } else if (roundEndReason !== undefined || winnerId !== undefined) return false;
+    const settlement = value.settlement;
+    if (!isSettlement(settlement, players, roundEndReason, winnerId)) return false;
+    if (settlement.profile !== (identity.variant === 'classic' ? 'classic-standard-v1' : '101-fixed-open-v1')) return false;
+    if (roundEndReason === 'finish' && settlement.finishStyle === undefined) return false;
+    if (roundEndReason === 'wall_exhausted' && settlement.finishStyle !== undefined) return false;
+    if (players.some((player) => settlement.entries.find((entry) => entry.playerId === player.id)?.delta !== player.roundScore)) return false;
+  } else if (roundEndReason !== undefined || winnerId !== undefined || value.settlement !== undefined) return false;
 
   const commandIdsValid = commandIds.every((id) => typeof id === 'string'
     && typeof commandFingerprints[id] === 'string');
@@ -115,6 +176,7 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
     value.indicatorTile,
     ...wall,
     ...discards,
+    ...tableMelds.flatMap((meld) => meld.tiles),
     ...players.flatMap((player) => player.rack),
   ];
   return tiles.length === 106 && new Set(tiles.map((tile) => tile.id)).size === 106;
@@ -127,7 +189,29 @@ export function encodeOfflineMatch(game: GameState): string {
 export function decodeOfflineMatch(serialized: string, identity: MatchIdentity): GameState | undefined {
   try {
     const parsed: unknown = JSON.parse(serialized);
-    const candidate = isRecord(parsed) && parsed.version === STORAGE_VERSION ? parsed.game : parsed;
+    let candidate = isRecord(parsed) && parsed.version === STORAGE_VERSION ? parsed.game : parsed;
+    if (isRecord(parsed) && parsed.version === 1 && isRecord(parsed.game)) {
+      const legacy = parsed.game;
+      const migrated: Record<string, unknown> = {
+        ...legacy,
+        tableMelds: [],
+        players: legacy.players,
+      };
+      if (migrated.phase === 'round_finished' && migrated.roundEndReason === 'wall_exhausted') {
+        const state = migrated as unknown as GameState;
+        const settlement = settleRound(state, { reason: 'wall_exhausted' });
+        candidate = {
+          ...migrated,
+          settlement,
+          players: state.players.map((player) => ({
+            ...player,
+            roundScore: settlement.entries.find((entry) => entry.playerId === player.id)?.delta ?? 0,
+          })),
+        };
+      } else {
+        candidate = migrated;
+      }
+    }
     return isGameState(candidate, identity) ? candidate : undefined;
   } catch {
     return undefined;

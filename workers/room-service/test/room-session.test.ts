@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { playDeterministicBotTurn } from '@luma/game-core';
 import worker from '../src/index';
 
 function request(path: string, userId: string, body?: unknown): Request {
@@ -41,4 +42,25 @@ describe('authoritative room Durable Object', () => {
     expect(collisionBody.error).toMatch(/another payload/);
     expect((await worker.fetch(request('/v1/rooms/commands/command', 'intruder', { command }), env)).status).toBe(403);
   });
+
+  it('authoritatively persists a complete 101 bot round including table melds and settlement', async () => {
+    const room = env.ROOMS.getByName('complete-101');
+    let snapshot = await room.init({ roomId: 'complete-101', hostUserId: 'u0', variant: '101', seed: 20260811 });
+    for (const userId of ['u1', 'u2', 'u3']) snapshot = await room.join(userId);
+    const userByPlayer = new Map(Object.entries(snapshot.seats).map(([userId, playerId]) => [playerId, userId]));
+    let turns = 0;
+    while (snapshot.state.phase !== 'round_finished') {
+      const active = snapshot.state.players[snapshot.state.turnIndex];
+      if (active === undefined) throw new Error('Expected active player');
+      const userId = userByPlayer.get(active.id);
+      if (userId === undefined) throw new Error('Expected authenticated seat');
+      const turn = playDeterministicBotTurn(snapshot.state, snapshot.state.sequence, 'worker-bot');
+      for (const command of turn.commands) snapshot = await room.submitCommand({ userId, command });
+      turns += 1;
+      if (turns > 256) throw new Error('Authoritative round did not terminate');
+    }
+    expect(snapshot.state.settlement?.profile).toBe('101-fixed-open-v1');
+    expect(snapshot.state.tableMelds.length).toBeGreaterThan(0);
+    expect((await room.snapshot('u0')).state).toEqual(snapshot.state);
+  }, 20_000);
 });

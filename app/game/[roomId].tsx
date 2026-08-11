@@ -2,8 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   GameRuleError,
   applyCommand,
-  chooseBotDiscard,
   createGame,
+  findOpeningMelds101,
+  findTableExtension,
+  findWinningMelds,
+  playDeterministicBotTurn,
   type GameState,
   type GameVariant,
 } from '@luma/game-core';
@@ -80,6 +83,33 @@ export default function GameScreen() {
     for (const tile of userRack) if (!rackOrder.includes(tile.id)) ordered.push(tile);
     return ordered;
   }, [rackOrder, userRack]);
+  const selectedFinishMelds = useMemo(() => {
+    if (selectedId === undefined || game.phase !== 'awaiting_discard' || game.turnIndex !== 0) return undefined;
+    const player = game.players[0];
+    if (player === undefined) return undefined;
+    if (variant === '101' && !player.opened && !game.rules.allowDirectFinishBelowThreshold101) return undefined;
+    const remaining = player.rack.filter((tile) => tile.id !== selectedId);
+    return findWinningMelds(remaining, game.indicator, {
+      allowHighAceWrap: variant === 'classic' && game.rules.classicHighAceRun,
+      allowSevenPairs: variant === 'classic' && game.rules.allowSevenPairsClassic,
+      pairsOnly: variant === '101' && player.openingMode === 'pairs',
+    });
+  }, [game.indicator, game.phase, game.players, game.rules.allowDirectFinishBelowThreshold101, game.rules.allowSevenPairsClassic, game.rules.classicHighAceRun, game.turnIndex, selectedId, variant]);
+  const automaticOpening = useMemo(() => {
+    const player = game.players[0];
+    if (variant !== '101' || game.phase !== 'awaiting_discard' || game.turnIndex !== 0 || player === undefined || player.opened) return undefined;
+    return findOpeningMelds101(
+      player.rack,
+      game.indicator,
+      game.rules.openingPoints101,
+      game.rules.pairsRequiredToOpen101,
+      game.rules.allowPairsOpening101,
+    );
+  }, [game.indicator, game.phase, game.players, game.rules.allowPairsOpening101, game.rules.openingPoints101, game.rules.pairsRequiredToOpen101, game.turnIndex, variant]);
+  const automaticExtension = useMemo(
+    () => variant === '101' && game.phase === 'awaiting_discard' && game.turnIndex === 0 ? findTableExtension(game, 'p0') : undefined,
+    [game, variant],
+  );
 
   useEffect(() => {
     const request = Symbol(persistenceKey);
@@ -116,23 +146,8 @@ export default function GameScreen() {
         try {
           const player = current.players[current.turnIndex];
           if (player === undefined || current.turnIndex === 0 || current.phase === 'round_finished') return current;
-          let next = current;
-          if (next.phase === 'awaiting_draw') {
-            next = applyCommand(next, {
-              type: 'draw_wall',
-              commandId: `bot-draw-${commandIndex.current++}`,
-              playerId: player.id,
-              expectedSequence: next.sequence,
-            }).state;
-          }
-          const tileId = chooseBotDiscard(next, player.id, commandIndex.current);
-          return applyCommand(next, {
-            type: 'discard',
-            tileId,
-            commandId: `bot-discard-${commandIndex.current++}`,
-            playerId: player.id,
-            expectedSequence: next.sequence,
-          }).state;
+          const result = playDeterministicBotTurn(current, commandIndex.current++, `bot-${player.id}`);
+          return result.state;
         } catch (error) {
           setNotice(error instanceof Error ? error.message : String(error));
           return current;
@@ -161,10 +176,37 @@ export default function GameScreen() {
         setNotice(t('game.select'));
         return;
       }
-      setGame((current) => applyCommand(current, {
-        type: 'discard', tileId: selectedId, commandId, playerId: 'p0', expectedSequence: current.sequence,
-      }).state);
+      const command = selectedFinishMelds === undefined
+        ? { type: 'discard' as const, tileId: selectedId, commandId, playerId: 'p0', expectedSequence: game.sequence }
+        : { type: 'finish' as const, discardTileId: selectedId, melds: selectedFinishMelds, commandId, playerId: 'p0', expectedSequence: game.sequence };
+      setGame(applyCommand(game, command).state);
       setSelectedId(undefined);
+      setNotice('');
+    } catch (error) {
+      setNotice(error instanceof GameRuleError ? error.message : String(error));
+    }
+  };
+
+  const runTableAction = () => {
+    try {
+      if (automaticOpening !== undefined) {
+        setGame(applyCommand(game, {
+          type: 'open_melds',
+          commandId: `user-open-${commandIndex.current++}`,
+          playerId: 'p0',
+          expectedSequence: game.sequence,
+          melds: automaticOpening.melds,
+        }).state);
+      } else if (automaticExtension !== undefined) {
+        setGame(applyCommand(game, {
+          type: 'extend_meld',
+          commandId: `user-extend-${commandIndex.current++}`,
+          playerId: 'p0',
+          expectedSequence: game.sequence,
+          tableMeldId: automaticExtension.tableMeldId,
+          tileIds: automaticExtension.tileIds,
+        }).state);
+      }
       setNotice('');
     } catch (error) {
       setNotice(error instanceof GameRuleError ? error.message : String(error));
@@ -220,6 +262,7 @@ export default function GameScreen() {
   const roundStatus = game.winnerId === undefined
     ? t('game.roundDraw')
     : t('game.roundWinner', { name: playerNames[winnerIndex] ?? game.winnerId });
+  const userRoundScore = game.settlement?.entries.find((entry) => entry.playerId === 'p0')?.delta;
 
   const table = (
     <OkeyTable
@@ -242,7 +285,13 @@ export default function GameScreen() {
               ? t('game.yourTurn')
               : t('game.waiting', { name: playerNames[game.turnIndex] ?? t('game.you') })}
         </Text>
-        <Text style={[styles.wall, { color: colors.muted }]}>{t('game.wall', { count: game.wall.length })}</Text>
+        <Text style={[styles.wall, { color: colors.muted }]}>
+          {roundFinished && userRoundScore !== undefined
+            ? t('game.roundScore', { score: userRoundScore })
+            : game.tableMelds.length > 0
+              ? t('game.tableMelds', { count: game.tableMelds.length })
+              : t('game.wall', { count: game.wall.length })}
+        </Text>
       </View>
       <TileRack
         tiles={orderedRack}
@@ -254,6 +303,15 @@ export default function GameScreen() {
         onMove={moveTile}
       />
       {notice.length > 0 && <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text>}
+      {(automaticOpening !== undefined || automaticExtension !== undefined) && (
+        <Pressable accessibilityRole="button" onPress={runTableAction} style={[styles.tableAction, { backgroundColor: colors.glass, borderColor: colors.border }]}>
+          <Text style={[styles.tableActionLabel, { color: palette.aqua }]}>
+            {automaticOpening !== undefined
+              ? t('game.autoOpen', { points: automaticOpening.points })
+              : t('game.autoExtend')}
+          </Text>
+        </Pressable>
+      )}
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
@@ -263,7 +321,13 @@ export default function GameScreen() {
           style={[styles.primary, compactLandscapeActions && styles.compactAction, { opacity: userCanAct ? 1 : 0.45 }]}
         >
           <Text numberOfLines={1} adjustsFontSizeToFit style={styles.primaryLabel}>
-            {roundFinished ? t('game.roundComplete') : game.phase === 'awaiting_draw' ? t('game.draw') : t('game.discard')}
+            {roundFinished
+              ? t('game.roundComplete')
+              : game.phase === 'awaiting_draw'
+                ? t('game.draw')
+                : selectedFinishMelds !== undefined
+                  ? t('game.finish')
+                  : t('game.discard')}
           </Text>
         </Pressable>
         <Pressable
@@ -380,6 +444,8 @@ const styles = StyleSheet.create({
   status: { fontSize: 15, fontWeight: '800' },
   wall: { fontSize: 12, fontWeight: '700' },
   notice: { color: palette.coral, textAlign: 'center', fontSize: 13, fontWeight: '700' },
+  tableAction: { minHeight: 40, borderWidth: 1, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.md },
+  tableActionLabel: { fontSize: 13, fontWeight: '900' },
   actions: { flexDirection: 'row', gap: space.xs, alignItems: 'center' },
   primary: { flex: 1, minHeight: 52, borderRadius: radius.pill, backgroundColor: palette.aqua, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.md },
   compactAction: { minHeight: 44, paddingHorizontal: space.xs },

@@ -1,5 +1,6 @@
 import { applyCommand } from './game';
 import { createSeededRandom } from './random';
+import { findOpeningMelds101, findTableExtension, findWinningDiscard } from './solver';
 import { effectiveValue, isJoker } from './tiles';
 import { type GameCommand, type GameState, type Tile } from './types';
 
@@ -36,6 +37,111 @@ export interface BotRoundSimulation {
   readonly commands: readonly GameCommand[];
 }
 
+export function playDeterministicBotTurn(initial: GameState, decisionIndex: number, commandPrefix = 'bot'): BotRoundSimulation {
+  let state = initial;
+  const commands: GameCommand[] = [];
+  const player = state.players[state.turnIndex];
+  if (player === undefined) throw new Error('Bot turn has no active player');
+
+  const submit = (command: GameCommand): void => {
+    commands.push(command);
+    state = applyCommand(state, command).state;
+  };
+
+  if (state.phase === 'awaiting_draw') {
+    submit({
+      type: 'draw_wall',
+      commandId: `${commandPrefix}-${state.sequence}-draw`,
+      playerId: player.id,
+      expectedSequence: state.sequence,
+    });
+  }
+
+  const winningMove = (): ReturnType<typeof findWinningDiscard> => {
+    const active = state.players[state.turnIndex];
+    if (active === undefined) return undefined;
+    if (state.variant === '101' && !active.opened && !state.rules.allowDirectFinishBelowThreshold101) return undefined;
+    return findWinningDiscard(active.rack, state.indicator, {
+      allowHighAceWrap: state.variant === 'classic' && state.rules.classicHighAceRun,
+      allowSevenPairs: state.variant === 'classic' && state.rules.allowSevenPairsClassic,
+      pairsOnly: state.variant === '101' && active.openingMode === 'pairs',
+    });
+  };
+
+  let finish = winningMove();
+  if (finish !== undefined) {
+    submit({
+      type: 'finish',
+      commandId: `${commandPrefix}-${state.sequence}-finish`,
+      playerId: player.id,
+      expectedSequence: state.sequence,
+      discardTileId: finish.discardTileId,
+      melds: finish.melds,
+    });
+    return { state, commands };
+  }
+
+  let active = state.players[state.turnIndex];
+  if (state.variant === '101' && active !== undefined && !active.opened) {
+    const opening = findOpeningMelds101(
+      active.rack,
+      state.indicator,
+      state.rules.openingPoints101,
+      state.rules.pairsRequiredToOpen101,
+      state.rules.allowPairsOpening101,
+    );
+    if (opening !== undefined) {
+      submit({
+        type: 'open_melds',
+        commandId: `${commandPrefix}-${state.sequence}-open`,
+        playerId: player.id,
+        expectedSequence: state.sequence,
+        melds: opening.melds,
+      });
+    }
+  }
+
+  if (state.variant === '101') {
+    let extension = findTableExtension(state, player.id);
+    while (extension !== undefined) {
+      submit({
+        type: 'extend_meld',
+        commandId: `${commandPrefix}-${state.sequence}-extend`,
+        playerId: player.id,
+        expectedSequence: state.sequence,
+        tableMeldId: extension.tableMeldId,
+        tileIds: extension.tileIds,
+      });
+      extension = findTableExtension(state, player.id);
+    }
+  }
+
+  finish = winningMove();
+  if (finish !== undefined) {
+    submit({
+      type: 'finish',
+      commandId: `${commandPrefix}-${state.sequence}-finish`,
+      playerId: player.id,
+      expectedSequence: state.sequence,
+      discardTileId: finish.discardTileId,
+      melds: finish.melds,
+    });
+    return { state, commands };
+  }
+
+  active = state.players[state.turnIndex];
+  if (active === undefined) throw new Error('Bot player disappeared during turn');
+  const tileId = chooseBotDiscard(state, active.id, decisionIndex);
+  submit({
+    type: 'discard',
+    tileId,
+    commandId: `${commandPrefix}-${state.sequence}-discard`,
+    playerId: active.id,
+    expectedSequence: state.sequence,
+  });
+  return { state, commands };
+}
+
 export function playDeterministicBotRound(initial: GameState, maxCommands = 512): BotRoundSimulation {
   let state = initial;
   const commands: GameCommand[] = [];
@@ -44,22 +150,10 @@ export function playDeterministicBotRound(initial: GameState, maxCommands = 512)
     if (commands.length >= maxCommands) throw new Error(`Bot round exceeded ${maxCommands} commands`);
     const player = state.players[state.turnIndex];
     if (player === undefined) throw new Error('Bot round has no active player');
-    const command: GameCommand = state.phase === 'awaiting_draw'
-      ? {
-          type: 'draw_wall',
-          commandId: `simulation-${state.sequence}-draw`,
-          playerId: player.id,
-          expectedSequence: state.sequence,
-        }
-      : {
-          type: 'discard',
-          tileId: chooseBotDiscard(state, player.id, state.sequence),
-          commandId: `simulation-${state.sequence}-discard`,
-          playerId: player.id,
-          expectedSequence: state.sequence,
-        };
-    commands.push(command);
-    state = applyCommand(state, command).state;
+    const turn = playDeterministicBotTurn(state, state.sequence, 'simulation');
+    if (turn.commands.length === 0) throw new Error(`Bot ${player.id} produced no command`);
+    commands.push(...turn.commands);
+    state = turn.state;
   }
 
   return { state, commands };

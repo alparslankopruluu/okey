@@ -3,5 +3,7 @@ export * from './game';
 export * from './melds';
 export * from './random';
 export * from './replay';
+export * from './scoring';
+export * from './solver';
 export * from './tiles';
 export * from './types';

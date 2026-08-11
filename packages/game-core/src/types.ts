@@ -5,6 +5,8 @@ export type TileNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
 export type GameVariant = 'classic' | '101';
 export type GamePhase = 'awaiting_draw' | 'awaiting_discard' | 'round_finished';
 export type RoundEndReason = 'finish' | 'wall_exhausted';
+export type OpeningMode = 'melds' | 'pairs';
+export type FinishStyle = 'normal' | 'joker' | 'pairs' | 'pairs_joker' | 'hand' | 'hand_joker' | 'seven_pairs';
 
 export interface Tile {
   readonly id: string;
@@ -24,10 +26,34 @@ export interface Meld {
   readonly tileIds: readonly string[];
 }
 
+export interface TableMeld {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly kind: Meld['kind'];
+  readonly tiles: readonly Tile[];
+}
+
+export interface RoundScoreEntry {
+  readonly playerId: string;
+  readonly delta: number;
+  readonly deadwood: number;
+  readonly opened: boolean;
+  readonly winner: boolean;
+}
+
+export interface RoundSettlement {
+  readonly profile: 'classic-standard-v1' | '101-fixed-open-v1';
+  readonly reason: RoundEndReason;
+  readonly finishStyle?: FinishStyle;
+  readonly winnerId?: string;
+  readonly entries: readonly RoundScoreEntry[];
+}
+
 export interface PlayerState {
   readonly id: string;
   readonly rack: readonly Tile[];
   readonly opened: boolean;
+  readonly openingMode?: OpeningMode;
   readonly roundScore: number;
 }
 
@@ -56,12 +82,14 @@ export interface GameState {
   readonly indicator: TileValue;
   readonly wall: readonly Tile[];
   readonly discards: readonly Tile[];
+  readonly tableMelds: readonly TableMeld[];
   readonly players: readonly PlayerState[];
   readonly rules: RuleConfig;
   readonly processedCommandIds: readonly string[];
   readonly processedCommandFingerprints: Readonly<Record<string, string>>;
   readonly winnerId?: string;
   readonly roundEndReason?: RoundEndReason;
+  readonly settlement?: RoundSettlement;
 }
 
 interface CommandBase {
@@ -75,15 +103,17 @@ export type GameCommand =
   | (CommandBase & { readonly type: 'draw_discard' })
   | (CommandBase & { readonly type: 'discard'; readonly tileId: string })
   | (CommandBase & { readonly type: 'open_melds'; readonly melds: readonly Meld[] })
+  | (CommandBase & { readonly type: 'extend_meld'; readonly tableMeldId: string; readonly tileIds: readonly string[] })
   | (CommandBase & { readonly type: 'finish'; readonly discardTileId: string; readonly melds: readonly Meld[] });
 
 export type GameEvent =
   | { readonly type: 'tile_drawn'; readonly playerId: string; readonly tile: Tile; readonly source: 'wall' | 'discard' }
   | { readonly type: 'tile_discarded'; readonly playerId: string; readonly tile: Tile }
-  | { readonly type: 'melds_opened'; readonly playerId: string; readonly melds: readonly Meld[]; readonly points: number }
+  | { readonly type: 'melds_opened'; readonly playerId: string; readonly melds: readonly Meld[]; readonly tableMeldIds: readonly string[]; readonly points: number }
+  | { readonly type: 'meld_extended'; readonly playerId: string; readonly tableMeldId: string; readonly tileIds: readonly string[] }
   | { readonly type: 'turn_advanced'; readonly turnIndex: number }
-  | { readonly type: 'round_finished'; readonly reason: 'finish'; readonly playerId: string; readonly discard: Tile }
-  | { readonly type: 'round_finished'; readonly reason: 'wall_exhausted'; readonly discard: Tile };
+  | { readonly type: 'round_finished'; readonly reason: 'finish'; readonly playerId: string; readonly discard: Tile; readonly settlement: RoundSettlement }
+  | { readonly type: 'round_finished'; readonly reason: 'wall_exhausted'; readonly discard: Tile; readonly settlement: RoundSettlement };
 
 export interface CommandResult {
   readonly state: GameState;

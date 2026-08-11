@@ -18,7 +18,7 @@
 ## M1 — Deterministic game core and offline table
 
 - [x] `packages/game-core` models tiles/racks/melds/state/commands/events without UI imports.
-- [ ] Classic and 101 rules/scoring cover false joker, opening, finish, invalid moves, and replay.
+- [x] Classic and 101 rules/scoring cover false joker, automatic winning partitions, opening/table mutation, legal finish, settlement, invalid moves, and replay.
 - [x] Seeded shuffle/bots produce identical results and a full offline match can finish.
 - [x] Offline match persists and resumes after app restart.
 - [ ] Responsive table supports phone/tablet, portrait/landscape, drag/reorder/draw/discard, readable tiles, Reduced Motion, and 30 FPS fallback.
@@ -29,9 +29,13 @@ build. Welcome, offline setup, seeded Classic table, one user discard, three bot
 turn handoff back to the user, and versioned/validated AsyncStorage resume at the same wall
 count are verified. iPhone portrait, both landscape directions, Classic/101 two-column
 reflow, and the landscape chat panel are also verified. Tablet, Android orientation,
-accessibility, and a user-driven winning round remain open. A deterministic four-bot runner
-now completes Classic and 101 rounds by wall exhaustion, preserves all 106 tiles, replays to
-the identical final state, and terminates across 40 property-generated seed/variant cases.
+accessibility, and a user-completed winning round remain open. Exact-cover winner discovery
+now allows bots to submit legal finish commands before stock exhaustion. The same deterministic
+runner covers both finish and draw outcomes, preserves all 106 tiles including 101 table melds,
+replays to the identical final state, and terminates across 40 property-generated seed/variant
+cases. On the native simulator, 101 seed 2 found a 104-point opening; tapping the localized
+action atomically moved 13 physical tiles into four table melds and reflowed the remaining
+nine-tile rack in portrait and landscape.
 
 **Done when:** a new user completes a deterministic Classic or 101 bot round and understands every core action unaided.
 

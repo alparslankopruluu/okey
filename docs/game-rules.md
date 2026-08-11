@@ -34,6 +34,24 @@ Sources: [Pagat Classic Okey](https://www.pagat.com/rummy/okey.html), [Pagat Oke
 - A direct 21-tile finish without layoffs may bypass the 101 threshold when the room profile enables it.
 - Baseline scoring: normal winner −101; unopened loser 202; opened loser remaining face total; pair opener remaining total ×2. Joker finish and hand finish multipliers are computed by the scoring profile, not UI.
 
+## Deterministic solver and table mutation
+
+- `findWinningMelds` and `findWinningDiscard` use deterministic exact-cover search. Caller rack order never changes the selected partition; identical state yields identical meld IDs and discard.
+- Runs longer than five are represented as adjacent legal 3–5 tile runs, so candidate enumeration stays bounded without changing whether a rack can finish.
+- Classic searches sets/runs first and the seven-exact-pairs alternative separately; it never accepts a mixed pair/run partition.
+- The 101 auto-opening helper selects disjoint sets/runs worth at least 101 while leaving the mandatory discard, then falls back to five exact pairs when enabled.
+- `open_melds` atomically removes physical tiles from the rack and creates owned `TableMeld` records. `extend_meld` revalidates the complete target meld and cannot consume the final discard tile. Pair melds cannot be extended.
+- A sets/runs opener can finish only with new sets/runs; a pairs opener can place new pairs and may lay tiles off on existing sets/runs. Every accepted table mutation is sequence-checked, idempotent, replayable, and included in 106-tile conservation.
+
+## `RoundSettlement v1`
+
+- Every terminal state carries the immutable scoring profile, terminal reason, optional finish style, winner, per-player deadwood, and score delta. `PlayerState.roundScore` must equal its settlement entry.
+- Classic starts from the traditional 20-point room score outside the round reducer. This reducer emits `0` for the winner and `−2` for each opponent on an ordinary finish; an actual-joker discard or seven-pairs finish emits `−4`. Stock exhaustion emits zero.
+- 101 ordinary sets/runs finish: winner `−101`; unopened loser `202`; opened loser remaining face total; pair opener remaining total ×2.
+- Actual-joker finish doubles the applicable winner and opened-player values. Pair-winning and direct-hand finishes use the documented doubled profile; a direct hand plus actual-joker finish is `−404` for the winner and `808` for unopened opponents.
+- An actual joker left in a 101 rack is worth 101 deadwood. On stock exhaustion there is no winner and only each unplayed actual joker emits a 101 delta.
+- The physical false joker is scored as the represented ordinary joker-face number, never as a wild actual joker.
+
 ## Explicit configuration (never hidden)
 
 | Flag | Default | Why explicit |
@@ -61,3 +79,5 @@ Partnership, Çanak, progressive opening, tournament penalties, layoff caps, ind
 8. Same seed and accepted command log yields the same deal, events, bot choices, score, and state hash.
 9. Snapshot-plus-tail replay equals full replay; reconnect never reshuffles or advances RNG.
 10. Actual-joker winning discard, ordinary actual-joker discard, and false-joker discard are three separate cases.
+11. Opening/layoff/finish moves transfer every used physical tile to exactly one table meld; persistence and Worker snapshots retain the same 106 IDs.
+12. Settlement is deterministic under replay, score deltas match `PlayerState.roundScore`, and corrupt/missing terminal settlement snapshots are rejected.

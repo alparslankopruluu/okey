@@ -1,6 +1,7 @@
-import { validateMeldCollection, isWinningClassicRack } from './melds';
+import { validateMeld, validateMeldCollection, isWinningClassicRack } from './melds';
 import { shuffled } from './random';
-import { createTileSet, effectiveValue } from './tiles';
+import { rackFaceScore, settleRound } from './scoring';
+import { createTileSet } from './tiles';
 import {
   GameRuleError,
   type CommandResult,
@@ -10,6 +11,8 @@ import {
   type GameVariant,
   type PlayerState,
   type RuleConfig,
+  type RoundSettlement,
+  type TableMeld,
   type Tile,
   type TileValue,
 } from './types';
@@ -72,11 +75,37 @@ export function createGame(options: {
     indicator,
     wall: deck,
     discards: [],
+    tableMelds: [],
     players,
     rules: { ...DEFAULT_RULES, ...options.rules },
     processedCommandIds: [],
     processedCommandFingerprints: {},
   };
+}
+
+function withRoundScores(players: readonly PlayerState[], settlement: RoundSettlement): readonly PlayerState[] {
+  const byPlayer = new Map(settlement.entries.map((entry) => [entry.playerId, entry.delta]));
+  return players.map((player) => ({ ...player, roundScore: byPlayer.get(player.id) ?? 0 }));
+}
+
+function tableMeldsFrom(
+  state: GameState,
+  player: PlayerState,
+  melds: readonly { readonly kind: TableMeld['kind']; readonly tileIds: readonly string[] }[],
+  sourceRack: readonly Tile[],
+  prefix: string,
+): readonly TableMeld[] {
+  const byId = new Map(sourceRack.map((tile) => [tile.id, tile]));
+  return melds.map((meld, index) => ({
+    id: `${prefix}-${state.sequence}-${player.id}-${index}`,
+    ownerId: player.id,
+    kind: meld.kind,
+    tiles: meld.tileIds.map((id) => {
+      const tile = byId.get(id);
+      if (tile === undefined) throw new GameRuleError('tile_not_in_rack', `Tile ${id} is not in the rack`);
+      return tile;
+    }),
+  }));
 }
 
 function activePlayer(state: GameState, playerId: string): PlayerState {
@@ -158,9 +187,13 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
 
   if (command.type === 'open_melds') {
     if (state.variant !== '101') throw new GameRuleError('opening_not_classic', 'Classic Okey has no table opening command');
+    if (state.phase !== 'awaiting_discard') throw new GameRuleError('opening_not_allowed', 'Draw before opening melds');
     if (player.opened) throw new GameRuleError('already_opened', 'Player has already opened');
     const result = validateMeldCollection(command.melds, player.rack, state.indicator);
     const pairsOpening = command.melds.every((meld) => meld.kind === 'pair');
+    if (!pairsOpening && command.melds.some((meld) => meld.kind === 'pair')) {
+      throw new GameRuleError('mixed_opening', 'Pairs cannot be mixed with sets or runs');
+    }
     if (pairsOpening) {
       if (!state.rules.allowPairsOpening101 || command.melds.length < state.rules.pairsRequiredToOpen101) {
         throw new GameRuleError('pairs_opening_too_short', 'Not enough pairs to open');
@@ -168,54 +201,122 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     } else if (result.points < state.rules.openingPoints101) {
       throw new GameRuleError('opening_points_too_low', `Opening needs ${state.rules.openingPoints101} points`);
     }
-    const nextPlayer = { ...player, opened: true };
-    events.push({ type: 'melds_opened', playerId: player.id, melds: command.melds, points: result.points });
-    return { state: withCommand(state, command, { players: replacePlayer(state, nextPlayer) }), events, duplicate: false };
-  }
-
-  const tileId = command.type === 'finish' ? command.discardTileId : command.tileId;
-  const discard = player.rack.find((tile) => tile.id === tileId);
-  if (discard === undefined) throw new GameRuleError('tile_not_in_rack', 'Discard tile is not in the rack');
-  const remainingRack = player.rack.filter((tile) => tile.id !== tileId);
-
-  if (command.type === 'finish') {
-    const valid = state.variant === 'classic'
-      ? isWinningClassicRack(
-          remainingRack,
-          state.indicator,
-          command.melds,
-          state.rules.allowSevenPairsClassic,
-          state.rules.classicHighAceRun,
-        )
-      : (player.opened || state.rules.allowDirectFinishBelowThreshold101)
-        && validateMeldCollection(command.melds, remainingRack, state.indicator).usedTileIds.length === remainingRack.length;
-    if (!valid) throw new GameRuleError('invalid_finish', 'Remaining rack is not a valid finish');
-    events.push({ type: 'round_finished', reason: 'finish', playerId: player.id, discard });
+    const used = new Set(result.usedTileIds);
+    const nextRack = player.rack.filter((tile) => !used.has(tile.id));
+    if (nextRack.length < 1) throw new GameRuleError('discard_required', 'Opening must leave one tile to discard');
+    const openedTableMelds = tableMeldsFrom(state, player, command.melds, player.rack, 'open');
+    const nextPlayer = { ...player, rack: nextRack, opened: true, openingMode: pairsOpening ? 'pairs' as const : 'melds' as const };
+    events.push({
+      type: 'melds_opened',
+      playerId: player.id,
+      melds: command.melds,
+      tableMeldIds: openedTableMelds.map((meld) => meld.id),
+      points: result.points,
+    });
     return {
       state: withCommand(state, command, {
-        phase: 'round_finished',
-        players: replacePlayer(state, { ...player, rack: remainingRack }),
-        discards: [...state.discards, discard],
-        winnerId: player.id,
-        roundEndReason: 'finish',
+        players: replacePlayer(state, nextPlayer),
+        tableMelds: [...state.tableMelds, ...openedTableMelds],
       }),
       events,
       duplicate: false,
     };
   }
 
+  if (command.type === 'extend_meld') {
+    if (state.variant !== '101') throw new GameRuleError('layoff_not_classic', 'Classic Okey has no table melds');
+    if (state.phase !== 'awaiting_discard') throw new GameRuleError('layoff_not_allowed', 'Draw before extending a meld');
+    if (!player.opened) throw new GameRuleError('opening_required', 'Open before extending a table meld');
+    if (command.tileIds.length === 0 || new Set(command.tileIds).size !== command.tileIds.length) {
+      throw new GameRuleError('invalid_layoff_tiles', 'A layoff needs unique rack tiles');
+    }
+    const tableMeld = state.tableMelds.find((meld) => meld.id === command.tableMeldId);
+    if (tableMeld === undefined) throw new GameRuleError('table_meld_missing', 'Table meld does not exist');
+    if (tableMeld.kind === 'pair') throw new GameRuleError('pair_not_extendable', 'A pair cannot be extended');
+    const selected = command.tileIds.map((id) => {
+      const tile = player.rack.find((candidate) => candidate.id === id);
+      if (tile === undefined) throw new GameRuleError('tile_not_in_rack', `Tile ${id} is not in the rack`);
+      return tile;
+    });
+    const selectedIds = new Set(command.tileIds);
+    const nextRack = player.rack.filter((tile) => !selectedIds.has(tile.id));
+    if (nextRack.length < 1) throw new GameRuleError('discard_required', 'A layoff must leave one tile to discard');
+    const combined = [...tableMeld.tiles, ...selected];
+    validateMeld({ kind: tableMeld.kind, tileIds: combined.map((tile) => tile.id) }, combined, state.indicator);
+    const tableMelds = state.tableMelds.map((meld) => meld.id === tableMeld.id ? { ...meld, tiles: combined } : meld);
+    events.push({ type: 'meld_extended', playerId: player.id, tableMeldId: tableMeld.id, tileIds: command.tileIds });
+    return {
+      state: withCommand(state, command, { players: replacePlayer(state, { ...player, rack: nextRack }), tableMelds }),
+      events,
+      duplicate: false,
+    };
+  }
+
   if (state.phase !== 'awaiting_discard') throw new GameRuleError('discard_not_allowed', 'Draw before discarding');
+  const tileId = command.type === 'finish' ? command.discardTileId : command.tileId;
+  const discard = player.rack.find((tile) => tile.id === tileId);
+  if (discard === undefined) throw new GameRuleError('tile_not_in_rack', 'Discard tile is not in the rack');
+  const remainingRack = player.rack.filter((tile) => tile.id !== tileId);
+
+  if (command.type === 'finish') {
+    let valid: boolean;
+    if (state.variant === 'classic') {
+      valid = isWinningClassicRack(
+          remainingRack,
+          state.indicator,
+          command.melds,
+          state.rules.allowSevenPairsClassic,
+          state.rules.classicHighAceRun,
+        );
+    } else {
+      const collection = validateMeldCollection(command.melds, remainingRack, state.indicator);
+      const allowedKinds = player.openingMode === 'pairs'
+        ? command.melds.every((meld) => meld.kind === 'pair')
+        : command.melds.every((meld) => meld.kind === 'sequence' || meld.kind === 'set');
+      valid = (player.opened || state.rules.allowDirectFinishBelowThreshold101)
+        && allowedKinds
+        && collection.usedTileIds.length === remainingRack.length;
+    }
+    if (!valid) throw new GameRuleError('invalid_finish', 'Remaining rack is not a valid finish');
+    const settlement = settleRound(state, { reason: 'finish', winnerId: player.id, discard, melds: command.melds });
+    const finishTableMelds = state.variant === '101'
+      ? tableMeldsFrom(state, player, command.melds, remainingRack, 'finish')
+      : [];
+    const winnerRack = state.variant === '101' ? [] : remainingRack;
+    const players = withRoundScores(
+      replacePlayer(state, { ...player, rack: winnerRack }),
+      settlement,
+    );
+    events.push({ type: 'round_finished', reason: 'finish', playerId: player.id, discard, settlement });
+    return {
+      state: withCommand(state, command, {
+        phase: 'round_finished',
+        players,
+        discards: [...state.discards, discard],
+        tableMelds: [...state.tableMelds, ...finishTableMelds],
+        winnerId: player.id,
+        roundEndReason: 'finish',
+        settlement,
+      }),
+      events,
+      duplicate: false,
+    };
+  }
+
   if (state.wall.length === 0) {
+    const playersAfterDiscard = replacePlayer(state, { ...player, rack: remainingRack });
+    const settlement = settleRound({ ...state, players: playersAfterDiscard }, { reason: 'wall_exhausted' });
     events.push(
       { type: 'tile_discarded', playerId: player.id, tile: discard },
-      { type: 'round_finished', reason: 'wall_exhausted', discard },
+      { type: 'round_finished', reason: 'wall_exhausted', discard, settlement },
     );
     return {
       state: withCommand(state, command, {
         phase: 'round_finished',
-        players: replacePlayer(state, { ...player, rack: remainingRack }),
+        players: withRoundScores(playersAfterDiscard, settlement),
         discards: [...state.discards, discard],
         roundEndReason: 'wall_exhausted',
+        settlement,
       }),
       events,
       duplicate: false,
@@ -236,8 +337,5 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
 }
 
 export function rackDeadwoodScore(rack: readonly Tile[], indicator: TileValue): number {
-  return rack.reduce((sum, tile) => {
-    const value = effectiveValue(tile, indicator);
-    return sum + (value === 'joker' ? 0 : value.number);
-  }, 0);
+  return rackFaceScore(rack, { indicator });
 }
