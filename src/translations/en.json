@@ -94,6 +94,7 @@
   "safety.report": "Report a player",
   "safety.noRecording": "Luma Okey does not record room voice.",
   "a11y.chips": "{{count}} chips",
+  "a11y.rack": "Two-row tile rack",
   "a11y.tile": "{{color}} {{number}} tile",
   "a11y.falseJoker": "False joker tile",
   "color.red": "red",

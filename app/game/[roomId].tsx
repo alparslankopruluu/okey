@@ -23,7 +23,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { OkeyTable } from '../../src/components/okey-table';
-import { TileCard } from '../../src/components/tile-card';
+import { TileRack } from '../../src/components/tile-rack';
 import { useAppTheme } from '../../src/hooks/use-app-theme';
 import { decodeOfflineMatch, encodeOfflineMatch, offlineMatchIdentity } from '../../src/services/offline-match';
 import { useAppStore } from '../../src/stores/app-store';
@@ -187,7 +187,6 @@ export default function GameScreen() {
   const isLandscape = width > height;
   const tableWidth = Math.min(width - space.md * 2, isLandscape ? width * 0.58 : 620);
   const tableHeight = Math.min(isLandscape ? height * 0.55 : height * 0.36, 360);
-  const tileWidth = Math.max(31, Math.min(47, (width - space.md * 2) / Math.min(orderedRack.length, isLandscape ? 18 : 11)));
   const userCanAct = game.turnIndex === 0;
 
   return (
@@ -220,19 +219,15 @@ export default function GameScreen() {
           </Text>
           <Text style={[styles.wall, { color: colors.muted }]}>{t('game.wall', { count: game.wall.length })}</Text>
         </View>
-        <ScrollView horizontal contentContainerStyle={styles.rack} showsHorizontalScrollIndicator={false} accessibilityLabel={t('offline.title')}>
-          {orderedRack.map((tile) => (
-            <TileCard
-              key={tile.id}
-              tile={tile}
-              selected={selectedId === tile.id}
-              width={tileWidth}
-              reducedMotion={reducedMotion}
-              onPress={() => setSelectedId((current) => current === tile.id ? undefined : tile.id)}
-              onMove={(delta) => moveTile(tile.id, delta)}
-            />
-          ))}
-        </ScrollView>
+        <TileRack
+          tiles={orderedRack}
+          selectedId={selectedId}
+          width={tableWidth}
+          accessibilityLabel={t('a11y.rack')}
+          reducedMotion={reducedMotion}
+          onSelect={(tileId) => setSelectedId((current) => current === tileId ? undefined : tileId)}
+          onMove={moveTile}
+        />
         {notice.length > 0 && <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text>}
         <View style={styles.actions}>
           <Pressable
@@ -298,7 +293,6 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   status: { fontSize: 15, fontWeight: '800' },
   wall: { fontSize: 12, fontWeight: '700' },
-  rack: { minWidth: '100%', minHeight: 88, alignItems: 'flex-end', gap: 3, paddingTop: 12, paddingHorizontal: 2 },
   notice: { color: palette.coral, textAlign: 'center', fontSize: 13, fontWeight: '700' },
   actions: { flexDirection: 'row', gap: space.xs, alignItems: 'center' },
   primary: { flex: 1, minHeight: 52, borderRadius: radius.pill, backgroundColor: palette.aqua, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.md },

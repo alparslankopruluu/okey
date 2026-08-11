@@ -44,6 +44,8 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
   }));
   const colorName = tile.color === undefined ? '' : t(`color.${tile.color}`);
   const label = tile.kind === 'false_joker' ? t('a11y.falseJoker') : t('a11y.tile', { color: colorName, number: tile.number });
+  const height = Math.round(Math.max(56, Math.min(72, width * 1.55)));
+  const numberSize = Math.round(Math.max(17, Math.min(23, width * 0.57)));
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={[animatedStyle, { width }]}>
@@ -56,13 +58,26 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
             styles.tile,
             {
               width,
-              borderColor: selected ? palette.aqua : 'rgba(10,16,40,0.12)',
+              height,
+              borderColor: selected ? palette.aqua : palette.tileBorder,
               shadowColor: selected ? palette.aqua : palette.black,
             },
           ]}
         >
           <View style={[styles.glyph, { backgroundColor: tile.kind === 'false_joker' ? palette.lilac : inkByColor[tile.color ?? 'black'] }]} />
-          <Text style={[styles.number, { color: tile.kind === 'false_joker' ? palette.lilac : inkByColor[tile.color ?? 'black'] }]}>
+          <Text
+            adjustsFontSizeToFit
+            minimumFontScale={0.78}
+            numberOfLines={1}
+            style={[
+              styles.number,
+              {
+                color: tile.kind === 'false_joker' ? palette.lilac : inkByColor[tile.color ?? 'black'],
+                fontSize: numberSize,
+                lineHeight: numberSize + 2,
+              },
+            ]}
+          >
             {tile.kind === 'false_joker' ? '✦' : tile.number}
           </Text>
           <View style={[styles.underline, { backgroundColor: tile.kind === 'false_joker' ? palette.lilac : inkByColor[tile.color ?? 'black'] }]} />
@@ -74,10 +89,9 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
 
 const styles = StyleSheet.create({
   tile: {
-    height: 72,
     borderRadius: radius.sm,
     borderWidth: 2,
-    backgroundColor: '#F8F1E3',
+    backgroundColor: palette.tileIvory,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
@@ -86,6 +100,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
   },
   glyph: { width: 6, height: 6, borderRadius: 3 },
-  number: { fontSize: 23, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  number: {
+    width: '100%',
+    paddingHorizontal: 1,
+    textAlign: 'center',
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.8,
+  },
   underline: { width: 16, height: 3, borderRadius: 2 },
 });

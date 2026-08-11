@@ -3,7 +3,7 @@
 ## Verified locally
 
 - Expo Doctor: 20/20 checks passed on Expo SDK 57.
-- Translation schema: 101 keys match across Turkish and English.
+- Translation schema: 102 keys match across Turkish and English.
 - ESLint: app, shared source, game core, and Worker source/tests pass with zero warnings.
 - TypeScript: root app, `@luma/game-core`, and `@luma/room-service` pass strict type checks.
 - Tests: 17 app/core/service tests and 2 Workers-runtime Durable Object tests pass.
@@ -18,6 +18,12 @@
 - Simulator evidence: [`ios-simulator-home-2026-08-11.png`](evidence/ios-simulator-home-2026-08-11.png),
   [`ios-simulator-offline-2026-08-11.png`](evidence/ios-simulator-offline-2026-08-11.png), and
   [`ios-simulator-offline-game-2026-08-11.png`](evidence/ios-simulator-offline-game-2026-08-11.png).
+- Responsive rack evidence: both Classic and 101 were opened through the installed iOS
+  development build. Values `10`–`13` remained horizontal and the complete hand rendered
+  on two visible shelves; Classic fit the phone width while 101 preserved readable tile
+  width with horizontal rack scrolling. See
+  [`ios-simulator-rack-classic-2026-08-11.png`](evidence/ios-simulator-rack-classic-2026-08-11.png)
+  and [`ios-simulator-rack-101-2026-08-11.png`](evidence/ios-simulator-rack-101-2026-08-11.png).
 - The first native attempt exposed an incompletely extracted local `node_modules` tree
   (missing Skia simulator and Workerd binaries). A lockfile-exact `npm ci` restored both;
   the Worker typecheck and second native build then passed without source-version changes.

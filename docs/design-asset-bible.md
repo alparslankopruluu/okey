@@ -7,6 +7,7 @@
 - **Origin:** generated output, not a stock library or copied game asset. Use is governed by the operator's applicable OpenAI terms; uniqueness, trademark, and final store/legal clearance are not guaranteed.
 - **Release check:** visually review every selected/cropped output for accidental marks, third-party resemblance, age appropriateness, and small-size behavior before shipping. Replace any disputed element.
 - **Gameplay rule:** tile numbers, colors, indicator/joker marks, turn state, scores, and actionable icons are deterministic Skia/SVG/text. AI raster output never decides or depicts gameplay-critical glyphs.
+- **Rack rule:** values `10`–`13` always render horizontally on one line. The player hand sits on two visible shelves (Classic 8+7 or 8+8; 101 11+11); narrow 101 layouts scroll the complete rack instead of stacking digits or crushing tap targets.
 
 ## Visual anchor
 

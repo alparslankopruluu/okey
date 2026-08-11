@@ -14,6 +14,12 @@ export const palette = {
   mutedLight: '#66708A',
   white: '#FFFFFF',
   black: '#000000',
+  tileIvory: '#FFF8E9',
+  tileBorder: 'rgba(10,16,40,0.14)',
+  rackTop: '#2A315A',
+  rackBottom: '#121936',
+  rackRail: '#0A1028',
+  rackHighlight: 'rgba(184,155,255,0.34)',
 } as const;
 
 export const space = { xxs: 4, xs: 8, sm: 12, md: 16, lg: 24, xl: 32, xxl: 48 } as const;

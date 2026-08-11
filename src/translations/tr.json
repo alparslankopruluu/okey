@@ -94,6 +94,7 @@
   "safety.report": "Oyuncu bildir",
   "safety.noRecording": "Luma Okey oda sesini kaydetmez.",
   "a11y.chips": "{{count}} çip",
+  "a11y.rack": "İki raflı taş ıstakası",
   "a11y.tile": "{{color}} {{number}} taşı",
   "a11y.falseJoker": "Sahte okey taşı",
   "color.red": "kırmızı",
