@@ -1,0 +1,27 @@
+{
+  "mutationScope": [
+    "Create and edit local Luma Okey repository files described by docs/blueprint.md",
+    "Generate and curate five local visual concept sets",
+    "Install local npm dependencies required by the approved Expo and test architecture",
+    "Commit and push verified implementation milestones to https://github.com/alparslankopruluu/okey.git main"
+  ],
+  "identifiers": {
+    "product": "Luma Okey",
+    "slug": "luma-okey",
+    "bundleId": "com.alparslankopruluu.lumaokey",
+    "repository": "https://github.com/alparslankopruluu/okey.git",
+    "kitRevision": "db96b8675920681bb81734be2526ea67927100f4"
+  },
+  "prices": {
+    "status": "human_todo",
+    "approvedRemotePriceMutations": []
+  },
+  "environments": {
+    "local": "approved",
+    "githubMain": "approved",
+    "firebase": "mock_only",
+    "cloudflare": "local_only_no_deploy",
+    "realtimeKit": "mock_only",
+    "revenueCatAndStores": "mock_only_no_catalog_or_upload"
+  }
+}

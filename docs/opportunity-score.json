@@ -1,0 +1,17 @@
+{
+  "scoredAt": "2026-08-11",
+  "decision": "go",
+  "total": 80,
+  "scores": {
+    "problemUrgency": 12,
+    "retentionPotential": 14,
+    "monetization": 12,
+    "distribution": 11,
+    "differentiation": 12,
+    "technicalFeasibility": 8,
+    "trustReviewFeasibility": 8,
+    "defensibility": 3
+  },
+  "criticalRisk": false,
+  "evidence": "docs/research-2026-08-11.md"
+}
