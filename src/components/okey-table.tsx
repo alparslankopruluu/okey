@@ -4,9 +4,16 @@ import { StyleSheet, Text, View } from 'react-native';
 import { AvatarMedallion } from './avatar-medallion';
 import { palette, radius } from '../theme/tokens';
 
-const names = ['You', 'Ada', 'Mert', 'Lina'] as const;
+interface OkeyTableProps {
+  readonly state: GameState;
+  readonly width: number;
+  readonly height: number;
+  readonly lowPerformance: boolean;
+  readonly playerNames: readonly string[];
+  readonly wallLabel: string;
+}
 
-export function OkeyTable({ state, width, height, lowPerformance }: { state: GameState; width: number; height: number; lowPerformance: boolean }) {
+export function OkeyTable({ state, width, height, lowPerformance, playerNames, wallLabel }: OkeyTableProps) {
   const positions = [
     { left: width / 2 - 36, bottom: 8 },
     { left: 8, top: height / 2 - 34 },
@@ -31,12 +38,12 @@ export function OkeyTable({ state, width, height, lowPerformance }: { state: Gam
       </Canvas>
       <View style={styles.centerPile}>
         <Text style={styles.wallCount}>{state.wall.length}</Text>
-        <Text style={styles.wallLabel}>WALL</Text>
+        <Text style={styles.wallLabel}>{wallLabel}</Text>
       </View>
       {state.players.map((player, index) => (
         <View key={player.id} style={[styles.seat, positions[index]]}>
           <AvatarMedallion index={index} size={index === 0 ? 66 : 56} active={state.turnIndex === index} />
-          <Text style={[styles.name, state.turnIndex === index && styles.activeName]}>{names[index]}</Text>
+          <Text style={[styles.name, state.turnIndex === index && styles.activeName]}>{playerNames[index] ?? player.id}</Text>
           <Text style={styles.count}>{player.rack.length}</Text>
         </View>
       ))}

@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import { OkeyTable } from '../../src/components/okey-table';
 import { TileCard } from '../../src/components/tile-card';
 import { useAppTheme } from '../../src/hooks/use-app-theme';
+import { decodeOfflineMatch, encodeOfflineMatch, offlineMatchIdentity } from '../../src/services/offline-match';
 import { useAppStore } from '../../src/stores/app-store';
 import { palette, radius, space } from '../../src/theme/tokens';
 
@@ -41,8 +42,10 @@ export default function GameScreen() {
   const params = useLocalSearchParams<{ variant?: string; seed?: string }>();
   const variant: GameVariant = params.variant === '101' ? '101' : 'classic';
   const seed = Number.isFinite(Number(params.seed)) ? Number(params.seed) : 20260811;
+  const identity = useMemo(() => offlineMatchIdentity(variant, seed), [seed, variant]);
   const persistenceKey = `luma-match-v1-${variant}-${seed}`;
   const [game, setGame] = useState(() => newMatch(variant, seed));
+  const [hydratedKey, setHydratedKey] = useState<string>();
   const [selectedId, setSelectedId] = useState<string>();
   const [rackOrder, setRackOrder] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
@@ -56,6 +59,8 @@ export default function GameScreen() {
   const toggleMusic = useAppStore((state) => state.toggleMusic);
   const botBusy = useRef(false);
   const commandIndex = useRef(0);
+  const hydrationRequest = useRef<symbol | undefined>(undefined);
+  const playerNames = useMemo(() => [t('game.you'), 'Ada', 'Mert', 'Lina'] as const, [t]);
 
   const userRack = useMemo(() => game.players[0]?.rack ?? [], [game.players]);
   const orderedRack = useMemo(() => {
@@ -69,23 +74,31 @@ export default function GameScreen() {
   }, [rackOrder, userRack]);
 
   useEffect(() => {
-    let active = true;
-    void AsyncStorage.getItem(persistenceKey).then((saved) => {
-      if (!active || saved === null) return;
+    const request = Symbol(persistenceKey);
+    hydrationRequest.current = request;
+    void (async () => {
+      const fresh = newMatch(variant, seed);
       try {
-        setGame(JSON.parse(saved) as GameState);
+        const saved = await AsyncStorage.getItem(persistenceKey);
+        if (hydrationRequest.current !== request) return;
+        const restored = saved === null ? undefined : decodeOfflineMatch(saved, identity);
+        setGame(restored ?? fresh);
+        if (saved !== null && restored === undefined) await AsyncStorage.removeItem(persistenceKey);
       } catch {
-        void AsyncStorage.removeItem(persistenceKey);
+        if (hydrationRequest.current === request) setGame(fresh);
+      } finally {
+        if (hydrationRequest.current === request) setHydratedKey(persistenceKey);
       }
-    });
+    })();
     return () => {
-      active = false;
+      if (hydrationRequest.current === request) hydrationRequest.current = undefined;
     };
-  }, [persistenceKey]);
+  }, [identity, persistenceKey, seed, variant]);
 
   useEffect(() => {
-    void AsyncStorage.setItem(persistenceKey, JSON.stringify(game));
-  }, [game, persistenceKey]);
+    if (hydratedKey !== persistenceKey) return;
+    void AsyncStorage.setItem(persistenceKey, encodeOfflineMatch(game));
+  }, [game, hydratedKey, persistenceKey]);
 
   useEffect(() => {
     if (game.phase === 'round_finished' || game.turnIndex === 0 || botBusy.current) return;
@@ -193,10 +206,17 @@ export default function GameScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <OkeyTable state={game} width={tableWidth} height={tableHeight} lowPerformance={lowPerformance} />
+        <OkeyTable
+          state={game}
+          width={tableWidth}
+          height={tableHeight}
+          lowPerformance={lowPerformance}
+          playerNames={playerNames}
+          wallLabel={t('game.wallLabel')}
+        />
         <View style={styles.statusRow}>
           <Text style={[styles.status, { color: userCanAct ? palette.aqua : colors.muted }]}>
-            {userCanAct ? t('game.yourTurn') : t('game.waiting', { name: ['You', 'Ada', 'Mert', 'Lina'][game.turnIndex] })}
+            {userCanAct ? t('game.yourTurn') : t('game.waiting', { name: playerNames[game.turnIndex] ?? t('game.you') })}
           </Text>
           <Text style={[styles.wall, { color: colors.muted }]}>{t('game.wall', { count: game.wall.length })}</Text>
         </View>

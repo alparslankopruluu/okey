@@ -21,3 +21,7 @@ worker-configuration.d.ts
 functions/lib/
 __pycache__/
 *.pyc
+
+# Expo Continuous Native Generation output. Recreate with expo run/prebuild.
+/ios/
+/android/

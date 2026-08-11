@@ -3,17 +3,30 @@
 ## Verified locally
 
 - Expo Doctor: 20/20 checks passed on Expo SDK 57.
-- Translation schema: 99 keys match across Turkish and English.
+- Translation schema: 101 keys match across Turkish and English.
 - ESLint: app, shared source, game core, and Worker source/tests pass with zero warnings.
 - TypeScript: root app, `@luma/game-core`, and `@luma/room-service` pass strict type checks.
-- Tests: 14 app/core/service tests and 2 Workers-runtime Durable Object tests pass.
+- Tests: 17 app/core/service tests and 2 Workers-runtime Durable Object tests pass.
+- Native iOS Debug development build succeeded with Xcode 26.6 and was installed on an
+  iPhone 16 Pro simulator running iOS 18.3. The welcome screen, offline setup, seeded
+  Classic table, one user discard, three deterministic bot turns, return of control to
+  the user, and reopening the same persisted match were observed. The wall advanced from
+  48 to 45 tiles and remained at 45 after leaving and reopening the route.
 - Game-core coverage includes 106-tile conservation, false-joker semantics, high-ace Classic runs, 101 opening threshold, duplicate/collision behavior, stale sequence, seeded replay, and property-based seed checks.
 - Worker coverage includes room isolation, four-seat capacity, Classic/101 initialization, seat ownership, sequence progression, command replay, idempotency collision, and unauthorized-command rejection.
 - Expo production exports pass for both iOS and Android. Hermes bundles are generated under ignored `dist/expo-ios` and `dist/expo-android`; this proves JavaScript/assets bundleability, not native signing or device behavior.
+- Simulator evidence: [`ios-simulator-home-2026-08-11.png`](evidence/ios-simulator-home-2026-08-11.png),
+  [`ios-simulator-offline-2026-08-11.png`](evidence/ios-simulator-offline-2026-08-11.png), and
+  [`ios-simulator-offline-game-2026-08-11.png`](evidence/ios-simulator-offline-game-2026-08-11.png).
+- The first native attempt exposed an incompletely extracted local `node_modules` tree
+  (missing Skia simulator and Workerd binaries). A lockfile-exact `npm ci` restored both;
+  the Worker typecheck and second native build then passed without source-version changes.
 
 ## Open gates
 
-- Native iOS/Android development-build and physical-device evidence are not yet available. Factory Doctor records the local tool/disk blockers.
+- Android development-build, iOS/Android physical-device, orientation, large-text,
+  Reduced Motion, and Maestro evidence remain open. The iOS simulator build produced one
+  non-blocking duplicate `-lc++` linker warning.
 - Firebase, Cloudflare deploy, RealtimeKit, RevenueCat/store catalogs, signing, licensed music, and store uploads remain explicit human/provider TODOs.
 - Production online auth is disabled until Firebase ID-token verification replaces the local test identity header.
 - Full tournament-grade Classic/101 scoring/table mutation and delta reconnect remain backlog items.

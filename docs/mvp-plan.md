@@ -1,6 +1,6 @@
 # MVP Plan — Luma Okey
 
-**Current milestone:** M0 — local bootstrap and asset-first gate
+**Current milestone:** M1 — deterministic game core and offline table
 
 ## M0 — Blueprint, assets, and scaffold
 
@@ -8,21 +8,27 @@
 - [x] Public research, clone screen, name screen, and deterministic Opportunity Score = `go` (80/100).
 - [x] `PRODUCT.md`, product map, blueprint, architecture, security, and backlog aligned.
 - [x] Generate and curate five original concept sets before feature code; prompts, origin, hashes, selections, and deterministic-glyph boundary are recorded in `docs/design-asset-bible.md`.
-- [ ] Expo SDK 57 workspace boots; strict TypeScript, lint, tests, and Expo doctor pass.
-- [ ] Turkish/English key-parity skeleton and design tokens exist from day one.
-- [ ] Provider boundaries default to mocks; no credentials/config binaries are committed.
-- [ ] Release-only preflight TODOs remain explicit: supported `asc`, Maestro, ≥30 GiB free disk.
+- [x] Expo SDK 57 workspace boots; strict TypeScript, lint, tests, and Expo doctor pass.
+- [x] Turkish/English key-parity skeleton and design tokens exist from day one.
+- [x] Provider boundaries default to mocks; no credentials/config binaries are committed.
+- [x] Release-only preflight TODOs remain explicit: supported `asc`, Maestro, ≥30 GiB free disk.
 
 **Done when:** approved concept assets and the mobile workspace are committed, tests are green, and provider/store work remains clearly mocked or waiting-human.
 
 ## M1 — Deterministic game core and offline table
 
-- [ ] `packages/game-core` models tiles/racks/melds/state/commands/events without UI imports.
+- [x] `packages/game-core` models tiles/racks/melds/state/commands/events without UI imports.
 - [ ] Classic and 101 rules/scoring cover false joker, opening, finish, invalid moves, and replay.
 - [ ] Seeded shuffle/bots produce identical results and a full offline match can finish.
-- [ ] Offline match persists and resumes after app restart.
+- [x] Offline match persists and resumes after app restart.
 - [ ] Responsive table supports phone/tablet, portrait/landscape, drag/reorder/draw/discard, readable tiles, Reduced Motion, and 30 FPS fallback.
 - [ ] Home, offline setup, game, daily bonus, settings/music, profile/store/safety mock surfaces are navigable in Turkish and English.
+
+**Current acceptance evidence:** iOS 18.3 iPhone 16 Pro simulator runs the native Debug
+build. Welcome, offline setup, seeded Classic table, one user discard, three bot turns,
+turn handoff back to the user, and versioned/validated AsyncStorage resume at the same wall
+count are verified. Tablet/orientation/accessibility and a full round remain open before
+checking the responsive/full-match items above.
 
 **Done when:** a new user completes a deterministic Classic or 101 bot round and understands every core action unaided.
 
