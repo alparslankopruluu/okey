@@ -4,6 +4,7 @@
 
 | Date | Decision | Why | Rejected alternatives |
 |---|---|---|---|
+| 2026-08-11 | Anchor the visual system to five original OpenAI-generated concept sheets, curate light/dark rooms and twelve avatar crops, and keep gameplay glyphs code-drawn | Establishes one coherent luminous-clay direction before feature code while preserving tile readability and provenance | Copying supplied screenshots, AI-rendered numbers/symbols, or mixing unrelated generated styles |
 | 2026-08-11 | Name the working product Luma Okey; treat the basic App Store collision search as a risk screen, not trademark clearance | The luminous-calm direction is distinctive and directly informs the visual system | Niva Okey, Masa Nova, or claiming legal clearance |
 | 2026-08-11 | Ship V1 mobile-only on Expo SDK 57 with a pure TypeScript game core; defer playable web to V2 | Native mobile interaction, voice, haptics, and store flows get the strongest first implementation while preserving reuse | Shipping three clients at once or coupling rules to React Native |
 | 2026-08-11 | Use Reanimated + Skia 2.5D rather than a full Three.js mobile scene | Predictable gestures, readability, accessibility, and lower-device fallback matter more than free-camera 3D | Full 3D table on mobile; static flat UI |

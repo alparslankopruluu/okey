@@ -7,7 +7,7 @@
 - [x] app-factory 4.1.0 installed from `db96b8675920681bb81734be2526ea67927100f4`.
 - [x] Public research, clone screen, name screen, and deterministic Opportunity Score = `go` (80/100).
 - [x] `PRODUCT.md`, product map, blueprint, architecture, security, and backlog aligned.
-- [ ] Generate and curate five original concept sets before feature code.
+- [x] Generate and curate five original concept sets before feature code; prompts, origin, hashes, selections, and deterministic-glyph boundary are recorded in `docs/design-asset-bible.md`.
 - [ ] Expo SDK 57 workspace boots; strict TypeScript, lint, tests, and Expo doctor pass.
 - [ ] Turkish/English key-parity skeleton and design tokens exist from day one.
 - [ ] Provider boundaries default to mocks; no credentials/config binaries are committed.
