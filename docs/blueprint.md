@@ -1,7 +1,9 @@
 # Approved local blueprint — Luma Okey
 
-**Blueprint date:** 2026-08-11  
-**Kit source:** app-factory `4.1.0` at `db96b8675920681bb81734be2526ea67927100f4`  
+**Blueprint date:** 2026-08-11
+
+**Kit source:** app-factory `4.1.0` at `db96b8675920681bb81734be2526ea67927100f4`
+
 **Authority:** the user explicitly approved the implementation plan and GitHub pushes. Provider creation, deploys, paid actions, signing, store catalog changes, and uploads are excluded and remain human TODOs.
 
 ## Product
