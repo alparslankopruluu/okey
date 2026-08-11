@@ -1,0 +1,62 @@
+{
+  "name": "luma-okey",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "workspaces": [
+    "packages/*",
+    "workers/*"
+  ],
+  "scripts": {
+    "start": "expo start --dev-client",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspace @luma/game-core && npm run typecheck --workspace @luma/room-service",
+    "lint": "eslint app src packages workers --ext .ts,.tsx --max-warnings=0 --no-error-on-unmatched-pattern",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:core": "npm test --workspace @luma/game-core",
+    "test:worker": "npm test --workspace @luma/room-service",
+    "lint:translations": "node scripts/check-translations.mjs",
+    "validate": "npm run lint:translations && npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@luma/game-core": "*",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@shopify/react-native-skia": "2.6.2",
+    "expo": "57.0.12",
+    "expo-asset": "~57.0.10",
+    "expo-audio": "~57.0.3",
+    "expo-blur": "~57.0.2",
+    "expo-constants": "~57.0.10",
+    "expo-haptics": "~57.0.1",
+    "expo-linear-gradient": "~57.0.1",
+    "expo-linking": "~57.0.5",
+    "expo-localization": "~57.0.1",
+    "expo-router": "57.0.12",
+    "expo-status-bar": "~57.0.1",
+    "i18next": "^25.6.0",
+    "lucide-react-native": "^0.545.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-i18next": "^16.1.0",
+    "react-native": "0.86.2",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
+    "react-native-worklets": "0.10.1",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/react": "~19.2.2",
+    "eslint": "^9.39.0",
+    "eslint-config-expo": "57.0.1",
+    "fast-check": "^4.3.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^3.2.4"
+  }
+}

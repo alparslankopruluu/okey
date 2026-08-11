@@ -117,3 +117,11 @@ Constraints: no text, no letters, no numbers, no currency symbols, no poker chip
 3. Avatar crops may ship as bundled cosmetic images after small-size/device review; provide descriptive accessibility labels and never infer real identity/ethnicity.
 4. Economy art may inspire code-drawn counters and one bonus illustration; never depict cash, odds, winnings, or gameplay power.
 5. Keep source originals immutable. Any edit becomes a new filename with its tool, prompt/change, date, and hash recorded here.
+
+## Development icon derivative
+
+- File: `assets/game/app-icon-dev.png`
+- Date: 2026-08-11
+- Tool/change: ImageMagick; avatar crop 01 was resized proportionally, centered, and padded to an opaque 1024 x 1024 midnight canvas.
+- SHA-256: `4e12abe624cc08698e9c97d821254ae6862f3a5f52fea4dcd99a9d416beeaa26`
+- Purpose: deterministic development-build placeholder only. Store icon art remains a human-reviewed release TODO.
