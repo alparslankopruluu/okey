@@ -10,7 +10,7 @@
 | 2026-08-11 | Synchronized room music/DJ mode | User idea refinement | Personal music is safer/simpler in V1 |
 | 2026-08-11 | Full mobile Three.js environment | Visual exploration | Skia/Reanimated chosen for V1 performance |
 | 2026-08-11 | Spectator/replay sharing | Fairness wedge | Consider after replay privacy and room consent |
-| 2026-08-11 | Complete full Classic/101 round scoring and table-meld mutation surface | Rule-engine acceptance | Current core proves deal, meld validation, opening threshold, turn/idempotency and replay foundations; tournament-grade edge matrix remains required |
+| 2026-08-11 | Complete full Classic/101 round scoring and table-meld mutation surface | Rule-engine acceptance | Wall-exhaustion rounds now terminate and replay deterministically; automatic legal-win discovery, score settlement, table mutation, and the tournament-grade edge matrix remain required |
 | 2026-08-11 | Firebase-token Worker authentication and device/session conflict policy | Security gate | Replace local `X-Luma-User`; requires real Firebase project and provider readback |
 | 2026-08-11 | Delta reconnect/event cursor and room chat inside the Durable Object | Online hardening | Current reconnect sends a full authoritative snapshot |
 | 2026-08-11 | Licensed bundled music playback | Human/license gate | UI and mock adapter exist; no unlicensed audio ships |

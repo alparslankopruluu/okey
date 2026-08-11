@@ -1,6 +1,7 @@
+import { applyCommand } from './game';
 import { createSeededRandom } from './random';
 import { effectiveValue, isJoker } from './tiles';
-import { type GameState, type Tile } from './types';
+import { type GameCommand, type GameState, type Tile } from './types';
 
 function tileUtility(tile: Tile, rack: readonly Tile[], state: GameState): number {
   if (isJoker(tile, state.indicator)) return 100;
@@ -28,4 +29,38 @@ export function chooseBotDiscard(state: GameState, playerId: string, decisionInd
   const selected = candidates[random.int(candidates.length)];
   if (selected === undefined) throw new Error('Bot could not select a discard');
   return selected.tile.id;
+}
+
+export interface BotRoundSimulation {
+  readonly state: GameState;
+  readonly commands: readonly GameCommand[];
+}
+
+export function playDeterministicBotRound(initial: GameState, maxCommands = 512): BotRoundSimulation {
+  let state = initial;
+  const commands: GameCommand[] = [];
+
+  while (state.phase !== 'round_finished') {
+    if (commands.length >= maxCommands) throw new Error(`Bot round exceeded ${maxCommands} commands`);
+    const player = state.players[state.turnIndex];
+    if (player === undefined) throw new Error('Bot round has no active player');
+    const command: GameCommand = state.phase === 'awaiting_draw'
+      ? {
+          type: 'draw_wall',
+          commandId: `simulation-${state.sequence}-draw`,
+          playerId: player.id,
+          expectedSequence: state.sequence,
+        }
+      : {
+          type: 'discard',
+          tileId: chooseBotDiscard(state, player.id, state.sequence),
+          commandId: `simulation-${state.sequence}-discard`,
+          playerId: player.id,
+          expectedSequence: state.sequence,
+        };
+    commands.push(command);
+    state = applyCommand(state, command).state;
+  }
+
+  return { state, commands };
 }

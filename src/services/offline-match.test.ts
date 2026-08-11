@@ -1,4 +1,4 @@
-import { createGame } from '@luma/game-core';
+import { createGame, playDeterministicBotRound } from '@luma/game-core';
 import { describe, expect, it } from 'vitest';
 import { decodeOfflineMatch, encodeOfflineMatch, offlineMatchIdentity } from './offline-match';
 
@@ -19,5 +19,11 @@ describe('offline match persistence', () => {
     expect(decodeOfflineMatch('{', identity)).toBeUndefined();
     const duplicate = { ...game, wall: [game.indicatorTile, ...game.wall.slice(1)] };
     expect(decodeOfflineMatch(JSON.stringify(duplicate), identity)).toBeUndefined();
+  });
+
+  it('round-trips a wall-exhausted completed round', () => {
+    const completed = playDeterministicBotRound(game).state;
+    expect(completed.roundEndReason).toBe('wall_exhausted');
+    expect(decodeOfflineMatch(encodeOfflineMatch(completed), identity)).toEqual(completed);
   });
 });

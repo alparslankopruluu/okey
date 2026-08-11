@@ -214,7 +214,12 @@ export default function GameScreen() {
     ? Math.min(landscapeContentHeight, LANDSCAPE_TABLE_MAX_HEIGHT)
     : Math.min(height * 0.36, PORTRAIT_TABLE_MAX_HEIGHT);
   const compactLandscapeActions = isLandscape && playColumnWidth < 360;
-  const userCanAct = game.turnIndex === 0;
+  const roundFinished = game.phase === 'round_finished';
+  const userCanAct = game.turnIndex === 0 && !roundFinished;
+  const winnerIndex = game.players.findIndex((player) => player.id === game.winnerId);
+  const roundStatus = game.winnerId === undefined
+    ? t('game.roundDraw')
+    : t('game.roundWinner', { name: playerNames[winnerIndex] ?? game.winnerId });
 
   const table = (
     <OkeyTable
@@ -230,8 +235,12 @@ export default function GameScreen() {
   const playControls = (
     <View style={[styles.playColumn, { width: playColumnWidth }]}>
       <View style={styles.statusRow}>
-        <Text style={[styles.status, { color: userCanAct ? palette.aqua : colors.muted }]}>
-          {userCanAct ? t('game.yourTurn') : t('game.waiting', { name: playerNames[game.turnIndex] ?? t('game.you') })}
+        <Text style={[styles.status, { color: roundFinished ? palette.gold : userCanAct ? palette.aqua : colors.muted }]}>
+          {roundFinished
+            ? roundStatus
+            : userCanAct
+              ? t('game.yourTurn')
+              : t('game.waiting', { name: playerNames[game.turnIndex] ?? t('game.you') })}
         </Text>
         <Text style={[styles.wall, { color: colors.muted }]}>{t('game.wall', { count: game.wall.length })}</Text>
       </View>
@@ -248,12 +257,13 @@ export default function GameScreen() {
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
+          accessibilityState={{ disabled: !userCanAct }}
           disabled={!userCanAct}
           onPress={() => runUserCommand(game.phase === 'awaiting_draw' ? 'draw' : 'discard')}
           style={[styles.primary, compactLandscapeActions && styles.compactAction, { opacity: userCanAct ? 1 : 0.45 }]}
         >
           <Text numberOfLines={1} adjustsFontSizeToFit style={styles.primaryLabel}>
-            {game.phase === 'awaiting_draw' ? t('game.draw') : t('game.discard')}
+            {roundFinished ? t('game.roundComplete') : game.phase === 'awaiting_draw' ? t('game.draw') : t('game.discard')}
           </Text>
         </Pressable>
         <Pressable

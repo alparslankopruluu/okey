@@ -190,13 +190,14 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
       : (player.opened || state.rules.allowDirectFinishBelowThreshold101)
         && validateMeldCollection(command.melds, remainingRack, state.indicator).usedTileIds.length === remainingRack.length;
     if (!valid) throw new GameRuleError('invalid_finish', 'Remaining rack is not a valid finish');
-    events.push({ type: 'round_finished', playerId: player.id, discard });
+    events.push({ type: 'round_finished', reason: 'finish', playerId: player.id, discard });
     return {
       state: withCommand(state, command, {
         phase: 'round_finished',
         players: replacePlayer(state, { ...player, rack: remainingRack }),
         discards: [...state.discards, discard],
         winnerId: player.id,
+        roundEndReason: 'finish',
       }),
       events,
       duplicate: false,
@@ -204,6 +205,22 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   }
 
   if (state.phase !== 'awaiting_discard') throw new GameRuleError('discard_not_allowed', 'Draw before discarding');
+  if (state.wall.length === 0) {
+    events.push(
+      { type: 'tile_discarded', playerId: player.id, tile: discard },
+      { type: 'round_finished', reason: 'wall_exhausted', discard },
+    );
+    return {
+      state: withCommand(state, command, {
+        phase: 'round_finished',
+        players: replacePlayer(state, { ...player, rack: remainingRack }),
+        discards: [...state.discards, discard],
+        roundEndReason: 'wall_exhausted',
+      }),
+      events,
+      duplicate: false,
+    };
+  }
   const nextTurn = (state.turnIndex + 1) % state.players.length;
   events.push({ type: 'tile_discarded', playerId: player.id, tile: discard }, { type: 'turn_advanced', turnIndex: nextTurn });
   return {

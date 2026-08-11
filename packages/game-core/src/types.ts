@@ -4,6 +4,7 @@ export type TileColor = (typeof TILE_COLORS)[number];
 export type TileNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
 export type GameVariant = 'classic' | '101';
 export type GamePhase = 'awaiting_draw' | 'awaiting_discard' | 'round_finished';
+export type RoundEndReason = 'finish' | 'wall_exhausted';
 
 export interface Tile {
   readonly id: string;
@@ -60,6 +61,7 @@ export interface GameState {
   readonly processedCommandIds: readonly string[];
   readonly processedCommandFingerprints: Readonly<Record<string, string>>;
   readonly winnerId?: string;
+  readonly roundEndReason?: RoundEndReason;
 }
 
 interface CommandBase {
@@ -80,7 +82,8 @@ export type GameEvent =
   | { readonly type: 'tile_discarded'; readonly playerId: string; readonly tile: Tile }
   | { readonly type: 'melds_opened'; readonly playerId: string; readonly melds: readonly Meld[]; readonly points: number }
   | { readonly type: 'turn_advanced'; readonly turnIndex: number }
-  | { readonly type: 'round_finished'; readonly playerId: string; readonly discard: Tile };
+  | { readonly type: 'round_finished'; readonly reason: 'finish'; readonly playerId: string; readonly discard: Tile }
+  | { readonly type: 'round_finished'; readonly reason: 'wall_exhausted'; readonly discard: Tile };
 
 export interface CommandResult {
   readonly state: GameState;

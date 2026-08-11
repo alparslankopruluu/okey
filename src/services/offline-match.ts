@@ -1,7 +1,8 @@
-import type { GamePhase, GameState, GameVariant, PlayerState, RuleConfig, Tile, TileValue } from '@luma/game-core';
+import type { GamePhase, GameState, GameVariant, PlayerState, RoundEndReason, RuleConfig, Tile, TileValue } from '@luma/game-core';
 
 const STORAGE_VERSION = 1;
 const PHASES: readonly GamePhase[] = ['awaiting_draw', 'awaiting_discard', 'round_finished'];
+const ROUND_END_REASONS: readonly RoundEndReason[] = ['finish', 'wall_exhausted'];
 const COLORS = new Set(['red', 'blue', 'black', 'yellow']);
 
 type MatchIdentity = Pick<GameState, 'gameId' | 'variant' | 'seed'>;
@@ -95,6 +96,16 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
     || !Number.isInteger(value.turnIndex) || value.turnIndex < 0 || value.turnIndex >= players.length) return false;
 
   if (!players.every(isPlayer) || !wall.every(isTile) || !discards.every(isTile)) return false;
+
+  const roundEndReason = value.roundEndReason;
+  const winnerId = value.winnerId;
+  if (roundEndReason !== undefined
+    && (typeof roundEndReason !== 'string' || !ROUND_END_REASONS.includes(roundEndReason as RoundEndReason))) return false;
+  if (winnerId !== undefined && (typeof winnerId !== 'string' || !players.some((player) => player.id === winnerId))) return false;
+  if (value.phase === 'round_finished') {
+    if (roundEndReason === undefined) return false;
+    if ((roundEndReason === 'finish') !== (winnerId !== undefined)) return false;
+  } else if (roundEndReason !== undefined || winnerId !== undefined) return false;
 
   const commandIdsValid = commandIds.every((id) => typeof id === 'string'
     && typeof commandFingerprints[id] === 'string');

@@ -1,12 +1,26 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { playDeterministicBotRound } from './bot';
 import { applyCommand, createGame } from './game';
 import { validateMeld } from './melds';
 import { replay } from './replay';
 import { createTileSet, effectiveValue, isJoker, jokerValue, tileByValue } from './tiles';
-import { GameRuleError, type GameCommand, type Meld, type TileValue } from './types';
+import {
+  GameRuleError,
+  type GameCommand,
+  type GameVariant,
+  type Meld,
+  type Tile,
+  type TileColor,
+  type TileNumber,
+  type TileValue,
+} from './types';
 
 const indicator: TileValue = { color: 'red', number: 13 };
+
+function sequence(color: TileColor, numbers: readonly TileNumber[]): Tile[] {
+  return numbers.map((number) => tileByValue(color, number));
+}
 
 describe('tile semantics', () => {
   it('creates 104 numbered tiles and two false jokers', () => {
@@ -82,6 +96,126 @@ describe('deterministic state machine', () => {
       expect(allIds).toHaveLength(106);
       expect(new Set(allIds)).toHaveLength(106);
     }));
+  });
+});
+
+describe('complete deterministic bot round', () => {
+  it.each(['classic', '101'] satisfies readonly GameVariant[])('finishes a %s round when the wall is exhausted', (variant) => {
+    const initial = createGame({ gameId: `full-${variant}`, variant, playerIds: ['a', 'b', 'c', 'd'], seed: 20260811 });
+    const first = playDeterministicBotRound(initial);
+    const second = playDeterministicBotRound(initial);
+
+    expect(first).toEqual(second);
+    expect(first.state.phase).toBe('round_finished');
+    expect(first.state.roundEndReason).toBe('wall_exhausted');
+    expect(first.state.winnerId).toBeUndefined();
+    expect(first.state.wall).toHaveLength(0);
+    expect(first.commands.length).toBeLessThan(512);
+    expect(replay(initial, first.commands)).toEqual(first.state);
+
+    const allIds = [
+      first.state.indicatorTile.id,
+      ...first.state.players.flatMap((player) => player.rack.map((tile) => tile.id)),
+      ...first.state.wall.map((tile) => tile.id),
+      ...first.state.discards.map((tile) => tile.id),
+    ];
+    expect(allIds).toHaveLength(106);
+    expect(new Set(allIds)).toHaveLength(106);
+
+    const lastCommand = first.commands.at(-1);
+    expect(lastCommand).toBeDefined();
+    if (lastCommand === undefined) throw new Error('Expected a final bot command');
+    const beforeLast = replay(initial, first.commands.slice(0, -1));
+    expect(applyCommand(beforeLast, lastCommand).events).toContainEqual({
+      type: 'round_finished',
+      reason: 'wall_exhausted',
+      discard: first.state.discards.at(-1),
+    });
+  });
+
+  it('terminates within the command budget across arbitrary seeds and variants', () => {
+    fc.assert(fc.property(
+      fc.integer(),
+      fc.constantFrom<GameVariant>('classic', '101'),
+      (seed, variant) => {
+        const initial = createGame({ gameId: 'property-full-round', variant, playerIds: ['a', 'b', 'c', 'd'], seed });
+        const result = playDeterministicBotRound(initial);
+        expect(result.state.phase).toBe('round_finished');
+        expect(result.state.roundEndReason).toBe('wall_exhausted');
+        expect(result.commands.length).toBeLessThan(512);
+      },
+    ), { numRuns: 40 });
+  });
+});
+
+describe('legal round finish', () => {
+  it('accepts a complete Classic rack and rejects an incomplete meld collection', () => {
+    const groups = [
+      sequence('blue', [1, 2, 3]),
+      sequence('red', [4, 5, 6]),
+      sequence('black', [7, 8, 9, 10]),
+      sequence('yellow', [10, 11, 12, 13]),
+    ];
+    const rack = groups.flat();
+    const discard = tileByValue('yellow', 1);
+    const melds: Meld[] = groups.map((tiles) => ({ kind: 'sequence', tileIds: tiles.map((tile) => tile.id) }));
+    const initial = createGame({ gameId: 'classic-finish', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 3 });
+    const player = initial.players[0];
+    if (player === undefined) throw new Error('Expected first player');
+    const state = { ...initial, indicator, players: [{ ...player, rack: [...rack, discard] }, ...initial.players.slice(1)] };
+
+    const result = applyCommand(state, {
+      type: 'finish',
+      commandId: 'classic-finish',
+      playerId: 'a',
+      expectedSequence: 0,
+      discardTileId: discard.id,
+      melds,
+    });
+    expect(result.state.phase).toBe('round_finished');
+    expect(result.state.roundEndReason).toBe('finish');
+    expect(result.state.winnerId).toBe('a');
+    expect(result.events).toContainEqual({ type: 'round_finished', reason: 'finish', playerId: 'a', discard });
+
+    expect(() => applyCommand(state, {
+      type: 'finish',
+      commandId: 'classic-invalid-finish',
+      playerId: 'a',
+      expectedSequence: 0,
+      discardTileId: discard.id,
+      melds: melds.slice(0, -1),
+    })).toThrow(/valid finish/);
+  });
+
+  it('accepts a complete direct-finish 101 rack under the configured rule', () => {
+    const groups = [
+      sequence('blue', [1, 2, 3]),
+      sequence('blue', [4, 5, 6]),
+      sequence('red', [4, 5, 6]),
+      sequence('red', [7, 8, 9]),
+      sequence('black', [1, 2, 3]),
+      sequence('black', [4, 5, 6]),
+      sequence('yellow', [1, 2, 3]),
+    ];
+    const rack = groups.flat();
+    const discard = tileByValue('yellow', 13);
+    const melds: Meld[] = groups.map((tiles) => ({ kind: 'sequence', tileIds: tiles.map((tile) => tile.id) }));
+    const initial = createGame({ gameId: '101-finish', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 4 });
+    const player = initial.players[0];
+    if (player === undefined) throw new Error('Expected first player');
+    const state = { ...initial, indicator, players: [{ ...player, rack: [...rack, discard] }, ...initial.players.slice(1)] };
+
+    const result = applyCommand(state, {
+      type: 'finish',
+      commandId: '101-finish',
+      playerId: 'a',
+      expectedSequence: 0,
+      discardTileId: discard.id,
+      melds,
+    });
+    expect(result.state.phase).toBe('round_finished');
+    expect(result.state.roundEndReason).toBe('finish');
+    expect(result.state.winnerId).toBe('a');
   });
 });
 

@@ -19,7 +19,7 @@
 
 - [x] `packages/game-core` models tiles/racks/melds/state/commands/events without UI imports.
 - [ ] Classic and 101 rules/scoring cover false joker, opening, finish, invalid moves, and replay.
-- [ ] Seeded shuffle/bots produce identical results and a full offline match can finish.
+- [x] Seeded shuffle/bots produce identical results and a full offline match can finish.
 - [x] Offline match persists and resumes after app restart.
 - [ ] Responsive table supports phone/tablet, portrait/landscape, drag/reorder/draw/discard, readable tiles, Reduced Motion, and 30 FPS fallback.
 - [ ] Home, offline setup, game, daily bonus, settings/music, profile/store/safety mock surfaces are navigable in Turkish and English.
@@ -29,7 +29,9 @@ build. Welcome, offline setup, seeded Classic table, one user discard, three bot
 turn handoff back to the user, and versioned/validated AsyncStorage resume at the same wall
 count are verified. iPhone portrait, both landscape directions, Classic/101 two-column
 reflow, and the landscape chat panel are also verified. Tablet, Android orientation,
-accessibility, and a full round remain open before checking the responsive/full-match items above.
+accessibility, and a user-driven winning round remain open. A deterministic four-bot runner
+now completes Classic and 101 rounds by wall exhaustion, preserves all 106 tiles, replays to
+the identical final state, and terminates across 40 property-generated seed/variant cases.
 
 **Done when:** a new user completes a deterministic Classic or 101 bot round and understands every core action unaided.
 

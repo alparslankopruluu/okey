@@ -36,9 +36,10 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 
 ## Domain and state
 
-- `Tile`, `Rack`, `Meld`, `GameVariant`, `GameState`, `GameCommand`, and `GameEvent` are immutable serializable types.
+- `Tile`, `Rack`, `Meld`, `GameVariant`, `GameState`, `GameCommand`, and `GameEvent` are immutable serializable types. A completed state records `roundEndReason` as either a legal finish or wall exhaustion; only a legal finish has `winnerId`.
 - Commands are validated and reduced to events; state changes only by applying events.
 - Seeded PRNG controls shuffle and bot tie-breaking. Replay is `(initial seed + ordered commands/events)`.
+- The deterministic bot-round runner is bounded to 512 commands. If nobody submits a legal finish, the final discard after the last wall draw closes the round as a draw instead of leaving the next player on an empty source.
 - Wall-clock time enters only as explicit command metadata; game rules never read ambient time.
 - Zustand owns UI preferences/session projection, never authoritative rules or wallet balance.
 

@@ -3,16 +3,21 @@
 ## Verified locally
 
 - Expo Doctor: 20/20 checks passed on Expo SDK 57.
-- Translation schema: 102 keys match across Turkish and English.
+- Translation schema: 105 keys match across Turkish and English.
 - ESLint: app, shared source, game core, and Worker source/tests pass with zero warnings.
 - TypeScript: root app, `@luma/game-core`, and `@luma/room-service` pass strict type checks.
-- Tests: 17 app/core/service tests and 2 Workers-runtime Durable Object tests pass.
+- Tests: 23 app/core/service tests and 2 Workers-runtime Durable Object tests pass.
 - Native iOS Debug development build succeeded with Xcode 26.6 and was installed on an
   iPhone 16 Pro simulator running iOS 18.3. The welcome screen, offline setup, seeded
   Classic table, one user discard, three deterministic bot turns, return of control to
   the user, and reopening the same persisted match were observed. The wall advanced from
   48 to 45 tiles and remained at 45 after leaving and reopening the route.
 - Game-core coverage includes 106-tile conservation, false-joker semantics, high-ace Classic runs, 101 opening threshold, duplicate/collision behavior, stale sequence, seeded replay, and property-based seed checks.
+- Full-round coverage drives four deterministic bots through Classic and 101 until wall
+  exhaustion, records a draw terminal reason, preserves all 106 unique tiles, replays to
+  the identical state, and terminates across 40 property-generated seed/variant cases.
+- Legal-finish coverage accepts complete Classic and direct-finish 101 racks, records the
+  winner/reason, and rejects an incomplete Classic meld collection.
 - Worker coverage includes room isolation, four-seat capacity, Classic/101 initialization, seat ownership, sequence progression, command replay, idempotency collision, and unauthorized-command rejection.
 - Expo production exports pass for both iOS and Android. Hermes bundles are generated under ignored `dist/expo-ios` and `dist/expo-android`; this proves JavaScript/assets bundleability, not native signing or device behavior.
 - Simulator evidence: [`ios-simulator-home-2026-08-11.png`](evidence/ios-simulator-home-2026-08-11.png),
