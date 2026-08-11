@@ -27,8 +27,9 @@
 **Current acceptance evidence:** iOS 18.3 iPhone 16 Pro simulator runs the native Debug
 build. Welcome, offline setup, seeded Classic table, one user discard, three bot turns,
 turn handoff back to the user, and versioned/validated AsyncStorage resume at the same wall
-count are verified. Tablet/orientation/accessibility and a full round remain open before
-checking the responsive/full-match items above.
+count are verified. iPhone portrait, both landscape directions, Classic/101 two-column
+reflow, and the landscape chat panel are also verified. Tablet, Android orientation,
+accessibility, and a full round remain open before checking the responsive/full-match items above.
 
 **Done when:** a new user completes a deterministic Classic or 101 bot round and understands every core action unaided.
 

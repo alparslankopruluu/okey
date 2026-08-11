@@ -24,14 +24,20 @@
   width with horizontal rack scrolling. See
   [`ios-simulator-rack-classic-2026-08-11.png`](evidence/ios-simulator-rack-classic-2026-08-11.png)
   and [`ios-simulator-rack-101-2026-08-11.png`](evidence/ios-simulator-rack-101-2026-08-11.png).
+- iPhone landscape evidence: rotating the running development build reflows the game into
+  a safe-area-aware two-column layout with the table on the left and status, complete rack,
+  draw/discard, chat, and voice controls on the right. Classic, 101, the landscape chat
+  panel, return to portrait, and both landscape directions were observed. See
+  [`ios-simulator-landscape-classic-2026-08-11.jpeg`](evidence/ios-simulator-landscape-classic-2026-08-11.jpeg)
+  and [`ios-simulator-landscape-101-2026-08-11.jpeg`](evidence/ios-simulator-landscape-101-2026-08-11.jpeg).
 - The first native attempt exposed an incompletely extracted local `node_modules` tree
   (missing Skia simulator and Workerd binaries). A lockfile-exact `npm ci` restored both;
   the Worker typecheck and second native build then passed without source-version changes.
 
 ## Open gates
 
-- Android development-build, iOS/Android physical-device, orientation, large-text,
-  Reduced Motion, and Maestro evidence remain open. The iOS simulator build produced one
+- Android development-build, iOS/Android physical-device, tablet/Android orientation,
+  large-text, Reduced Motion, and Maestro evidence remain open. The iOS simulator build produced one
   non-blocking duplicate `-lc++` linker warning.
 - Firebase, Cloudflare deploy, RealtimeKit, RevenueCat/store catalogs, signing, licensed music, and store uploads remain explicit human/provider TODOs.
 - Production online auth is disabled until Firebase ID-token verification replaces the local test identity header.
