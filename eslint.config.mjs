@@ -3,7 +3,7 @@ import expo from 'eslint-config-expo/flat.js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['.agents/**', '.claude/**', '.factory/**', 'templates/**', 'node_modules/**', 'dist/**', 'coverage/**', '**/worker-configuration.d.ts'] },
+  { ignores: ['.agents/**', '.claude/**', '.factory/**', 'templates/**', 'node_modules/**', '**/dist/**', 'coverage/**', '**/worker-configuration.d.ts'] },
   js.configs.recommended,
   ...expo,
   ...tseslint.configs.strictTypeChecked,

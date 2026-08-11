@@ -17,6 +17,7 @@ node_modules/
 dist/
 worker-configuration.d.ts
 .wrangler/
+.expo/
 functions/lib/
 __pycache__/
 *.pyc

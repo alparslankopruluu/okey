@@ -9,6 +9,7 @@
 - Tests: 14 app/core/service tests and 2 Workers-runtime Durable Object tests pass.
 - Game-core coverage includes 106-tile conservation, false-joker semantics, high-ace Classic runs, 101 opening threshold, duplicate/collision behavior, stale sequence, seeded replay, and property-based seed checks.
 - Worker coverage includes room isolation, four-seat capacity, Classic/101 initialization, seat ownership, sequence progression, command replay, idempotency collision, and unauthorized-command rejection.
+- Expo production exports pass for both iOS and Android. Hermes bundles are generated under ignored `dist/expo-ios` and `dist/expo-android`; this proves JavaScript/assets bundleability, not native signing or device behavior.
 
 ## Open gates
 
