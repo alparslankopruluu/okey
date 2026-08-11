@@ -13,12 +13,12 @@
     "android": "expo run:android",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace @luma/game-core && npm run typecheck --workspace @luma/room-service",
     "lint": "eslint app src packages workers --ext .ts,.tsx --max-warnings=0 --no-error-on-unmatched-pattern",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:worker",
     "test:watch": "vitest",
     "test:core": "npm test --workspace @luma/game-core",
     "test:worker": "npm test --workspace @luma/room-service",
     "lint:translations": "node scripts/check-translations.mjs",
-    "validate": "npm run lint:translations && npm run typecheck && npm test"
+    "validate": "npm run lint:translations && npm run lint && npm run typecheck && npm test"
   },
   "dependencies": {
     "@luma/game-core": "*",
@@ -57,6 +57,6 @@
     "fast-check": "^4.3.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.46.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.0"
   }
 }

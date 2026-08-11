@@ -2,8 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { i18n } from '../i18n';
-
-const DAILY_REWARDS = [250, 300, 350, 400, 500, 750, 1000] as const;
+import { calculateDailyClaim } from '../services/economy';
 
 interface AppStore {
   language: 'tr' | 'en';
@@ -26,12 +25,6 @@ interface AppStore {
   setMusicVolume(volume: number): void;
   claimDaily(today: string): number;
   selectAvatar(index: number): void;
-}
-
-function previousCalendarDay(isoDay: string): string {
-  const date = new Date(`${isoDay}T12:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() - 1);
-  return date.toISOString().slice(0, 10);
 }
 
 export const useAppStore = create<AppStore>()(
@@ -59,12 +52,13 @@ export const useAppStore = create<AppStore>()(
       setMusicVolume: (volume) => set({ musicVolume: Math.max(0, Math.min(1, volume)) }),
       claimDaily: (today) => {
         const state = get();
-        if (state.lastDailyClaim === today) return 0;
-        const continued = state.lastDailyClaim === previousCalendarDay(today);
-        const streak = continued ? Math.min(state.dailyStreak + 1, DAILY_REWARDS.length) : 1;
-        const reward = DAILY_REWARDS[streak - 1] ?? DAILY_REWARDS[0];
-        set({ lastDailyClaim: today, dailyStreak: streak, chips: state.chips + reward });
-        return reward;
+        const dailyState = state.lastDailyClaim === undefined
+          ? { streak: state.dailyStreak }
+          : { streak: state.dailyStreak, lastClaimDay: state.lastDailyClaim };
+        const result = calculateDailyClaim(dailyState, today);
+        if (result.duplicate) return 0;
+        set({ lastDailyClaim: result.lastClaimDay, dailyStreak: result.streak, chips: state.chips + result.reward });
+        return result.reward;
       },
       selectAvatar: (avatarIndex) => set({ avatarIndex }),
     }),

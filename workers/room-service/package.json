@@ -1,0 +1,20 @@
+{
+  "name": "@luma/room-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "wrangler types >/dev/null && tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@luma/game-core": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.21.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.0",
+    "wrangler": "4.120.1"
+  }
+}

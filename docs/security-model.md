@@ -48,3 +48,7 @@
 - **Reviewer path:** anonymous → offline casual Classic → settings/safety; store/voice mock states are clearly labelled until real sandbox setup.
 - **Privacy evidence:** generated from exact installed SDKs/permissions and verified native build, not this plan.
 - **History scan:** required before each release; current repo begins secret-free.
+
+## Current local boundary
+
+The committed Worker is intentionally non-production: `X-Luma-User` is a local test identity, provider feature flags default OFF, and no Cloudflare deployment exists. A production adapter must verify a Firebase ID token at the Worker boundary, derive the user ID from verified claims, reject the client-provided identity header, and pass the verified identity to the room object. This is a release blocker, not optional hardening.

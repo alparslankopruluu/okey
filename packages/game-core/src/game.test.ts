@@ -38,7 +38,7 @@ describe('meld validation', () => {
 
   it('rejects duplicate colors in a set', () => {
     const rack = [tileByValue('blue', 4, 0), tileByValue('blue', 4, 1), tileByValue('red', 4)];
-    expect(() => validateMeld({ kind: 'set', tileIds: rack.map((tile) => tile.id) }, rack, indicator)).toThrowError(/repeat a color/);
+    expect(() => validateMeld({ kind: 'set', tileIds: rack.map((tile) => tile.id) }, rack, indicator)).toThrow(/repeat a color/);
   });
 });
 
@@ -50,14 +50,14 @@ describe('deterministic state machine', () => {
 
   it('rejects stale/out-of-turn commands and treats command ids idempotently', () => {
     const game = createGame({ gameId: 'g2', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 9 });
-    expect(() => applyCommand(game, { type: 'discard', commandId: 'wrong', playerId: 'b', expectedSequence: 0, tileId: 'none' })).toThrowError(/turn/);
+    expect(() => applyCommand(game, { type: 'discard', commandId: 'wrong', playerId: 'b', expectedSequence: 0, tileId: 'none' })).toThrow(/turn/);
     const tile = game.players[0]?.rack[0];
     expect(tile).toBeDefined();
     const command: GameCommand = { type: 'discard', commandId: 'c1', playerId: 'a', expectedSequence: 0, tileId: tile?.id ?? '' };
     const first = applyCommand(game, command);
     expect(applyCommand(first.state, command).duplicate).toBe(true);
-    expect(() => applyCommand(first.state, { ...command, tileId: 'another-tile' })).toThrowError(/another payload/);
-    expect(() => applyCommand(game, { ...command, commandId: 'c2', expectedSequence: 2 })).toThrowError(/Expected sequence/);
+    expect(() => applyCommand(first.state, { ...command, tileId: 'another-tile' })).toThrow(/another payload/);
+    expect(() => applyCommand(game, { ...command, commandId: 'c2', expectedSequence: 2 })).toThrow(/Expected sequence/);
   });
 
   it('replays a command sequence to the same state', () => {
@@ -94,6 +94,6 @@ describe('101 opening', () => {
     if (player === undefined) throw new Error('Expected first player');
     const state = { ...game, players: [{ ...player, rack }, ...game.players.slice(1)] };
     const meld: Meld = { kind: 'sequence', tileIds: rack.map((tile) => tile.id) };
-    expect(() => applyCommand(state, { type: 'open_melds', commandId: 'open', playerId: 'a', expectedSequence: 0, melds: [meld] })).toThrowError(/101 points/);
+    expect(() => applyCommand(state, { type: 'open_melds', commandId: 'open', playerId: 'a', expectedSequence: 0, melds: [meld] })).toThrow(/101 points/);
   });
 });

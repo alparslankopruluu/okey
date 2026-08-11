@@ -3,7 +3,7 @@ import expo from 'eslint-config-expo/flat.js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['.agents/**', '.claude/**', '.factory/**', 'templates/**', 'node_modules/**', 'dist/**', 'coverage/**'] },
+  { ignores: ['.agents/**', '.claude/**', '.factory/**', 'templates/**', 'node_modules/**', 'dist/**', 'coverage/**', '**/worker-configuration.d.ts'] },
   js.configs.recommended,
   ...expo,
   ...tseslint.configs.strictTypeChecked,
@@ -22,6 +22,12 @@ export default tseslint.config(
       '@typescript-eslint/unbound-method': 'off',
       'import/no-named-as-default-member': 'off',
       'react-hooks/immutability': 'off',
+    },
+  },
+  {
+    files: ['workers/**/*.ts'],
+    rules: {
+      'import/no-unresolved': 'off',
     },
   },
 );

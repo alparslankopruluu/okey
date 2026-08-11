@@ -35,8 +35,8 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
     .onEnd((event) => {
       const delta = Math.round(event.translationX / Math.max(width, 1));
       if (delta !== 0) scheduleOnRN(onMove, delta);
-      translateX.value = withSpring(0, { damping: 20, stiffness: 260 });
-      translateY.value = withSpring(0, { damping: 20, stiffness: 260 });
+      translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20, stiffness: 260 });
+      translateY.value = reducedMotion ? 0 : withSpring(0, { damping: 20, stiffness: 260 });
     });
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { translateY: selected ? -10 : 0 }],

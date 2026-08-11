@@ -7,11 +7,12 @@ import { useAppStore } from '../src/stores/app-store';
 
 export default function RootLayout() {
   const appearance = useAppStore((state) => state.appearance);
+  const reducedMotion = useAppStore((state) => state.reducedMotion);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style={appearance === 'dark' ? 'light' : 'dark'} />
-        <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+        <Stack screenOptions={{ headerShown: false, animation: reducedMotion ? 'none' : 'fade' }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="welcome" />
           <Stack.Screen name="(tabs)" />

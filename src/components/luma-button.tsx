@@ -1,8 +1,9 @@
 import * as Haptics from 'expo-haptics';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useAppTheme } from '../hooks/use-app-theme';
+import { useAppStore } from '../stores/app-store';
 import { palette, radius, space } from '../theme/tokens';
 
 interface LumaButtonProps {
@@ -18,6 +19,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function LumaButton({ label, onPress, icon, variant = 'primary', disabled = false, style }: LumaButtonProps) {
   const { colors } = useAppTheme();
+  const reducedMotion = useAppStore((state) => state.reducedMotion);
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const backgroundColor = variant === 'primary' ? palette.aqua : variant === 'danger' ? palette.danger : colors.elevated;
@@ -27,8 +29,12 @@ export function LumaButton({ label, onPress, icon, variant = 'primary', disabled
       accessibilityRole="button"
       accessibilityLabel={label}
       disabled={disabled}
-      onPressIn={() => { scale.value = withSpring(0.97, { damping: 18, stiffness: 280 }); }}
-      onPressOut={() => { scale.value = withSpring(1, { damping: 18, stiffness: 280 }); }}
+      onPressIn={() => {
+        scale.value = reducedMotion ? 1 : withTiming(0.97, { duration: 120, easing: Easing.bezier(0.23, 1, 0.32, 1) });
+      }}
+      onPressOut={() => {
+        scale.value = reducedMotion ? 1 : withTiming(1, { duration: 140, easing: Easing.bezier(0.23, 1, 0.32, 1) });
+      }}
       onPress={() => {
         void Haptics.selectionAsync();
         onPress();
