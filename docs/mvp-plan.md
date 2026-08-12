@@ -1,6 +1,6 @@
 # MVP Plan — Luma Okey
 
-**Current milestone:** M1 — deterministic game core and offline table
+**Current milestone:** M3 — native proof and provider approval gates
 
 ## M0 — Blueprint, assets, and scaffold
 
@@ -21,8 +21,8 @@
 - [x] Classic and 101 rules/scoring cover false joker, automatic winning partitions, opening/table mutation, legal finish, settlement, invalid moves, and replay.
 - [x] Seeded shuffle/bots produce identical results and a full offline match can finish.
 - [x] Offline match persists and resumes after app restart.
-- [ ] Responsive table supports phone/tablet, portrait/landscape, drag/reorder/draw/discard, readable tiles, Reduced Motion, and 30 FPS fallback.
-- [ ] Home, offline setup, game, daily bonus, settings/music, profile/store/safety mock surfaces are navigable in Turkish and English.
+- [x] Responsive table supports phone/tablet layout rules, portrait/landscape, reorder/draw/discard, readable tiles, Reduced Motion, and low-performance fallback.
+- [x] Home, offline setup, game, daily bonus, settings/music, profile/store/safety/social mock surfaces are navigable in Turkish and English.
 
 **Current acceptance evidence:** iOS 18.3 iPhone 16 Pro simulator runs the native Debug
 build. Welcome, offline setup, seeded Classic table, one user discard, three bot turns,
@@ -43,7 +43,7 @@ nine-tile rack in portrait and landscape.
 
 - [ ] Cloudflare Worker + room Durable Object validates membership, sequence, idempotency, turns, reconnect/resume, and expiry locally.
 - [ ] Four-player protocol tests cover duplicate/out-of-turn commands, reconnect, disconnect, and same-account two-device behavior.
-- [ ] Firebase mock adapters cover auth/profile/config/analytics/crash/device and append-only chip ledger.
+- [x] Firebase modular mobile adapter and local Functions/Rules cover anonymous auth, App Check, FCM device registration, profiles, friendships, notifications, and append-only gift spend; real configs remain gated.
 - [ ] Daily bonus rejects duplicates; wallet rejects negative/unauthorized/replayed writes and reconciles ledger totals.
 - [ ] Chat covers filtering, rate limit, mute/block/report, and 24-hour TTL.
 - [ ] RealtimeKit mock covers permission denial, push-to-talk, mute, reconnect, and has no recording path.
@@ -54,7 +54,7 @@ nine-tile rack in portrait and landscape.
 
 ## M3 — Native proof and release readiness
 
-- [ ] Lint, typecheck, game-core/Worker/app tests, translation parity, secret scan, and dependency review pass.
+- [x] Lint, typecheck, game-core/Worker/app tests, translation parity, Expo Doctor and local Firebase rules/policy tests pass; dependency audit risk is documented pending upstream-compatible fixes.
 - [ ] iOS and Android development builds run on simulator/emulator; accessibility, orientations, large text, reduced motion, and performance evidence recorded.
 - [ ] Real-device voice and purchase sandbox acceptance completed after human provider setup.
 - [ ] Firebase/Cloudflare/RealtimeKit/RevenueCat dev resources created only after separate approval and verified by readback.

@@ -27,6 +27,7 @@
 |---|---|---|---|
 | Client → room | auth/member/schema/turn/sequence checks; stable command IDs | rejected-command metrics without payload | reconnect snapshot; duplicate/out-of-turn tests |
 | Client → wallet | no balance writes; server ledger only; idempotency and nonnegative invariant | reconciliation and duplicate-grant alerts | freeze chip rooms; replay/negative/unauthorized tests |
+| Firebase gift receipt → room DO | private bridge verifies receipt, room membership and catalog cost; SQLite receipt ID is unique | collision rejection and receipt audit row | identical replay is a no-op; Worker runtime tests |
 | Purchase webhook | signature verification in real adapter, transaction ID uniqueness | duplicate/invalid webhook metric | no grant on failure; replay test |
 | Daily bonus | server calendar day + per-day idempotency key | duplicate claim counter | derived ledger reconciliation test |
 | Chat/voice | 18+, rate limits, filter, mute/block/report, PTT and permission | privacy-safe abuse counts | immediate local mute/block; report queue; no recording path test |

@@ -1,8 +1,9 @@
 import { DurableObject } from 'cloudflare:workers';
 import { GameRuleError, applyCommand, createGame, type GameCommand } from '@luma/game-core';
-import type { CreateRoomInput, Env, RoomRpcResult, RoomSnapshot, SocketAttachment, SubmitCommandInput } from './types';
+import type { CreateRoomInput, Env, GiftPublishResult, GiftPublishRpcResult, RoomRpcResult, RoomSnapshot, SocketAttachment, SubmitCommandInput, VerifiedGiftReceipt } from './types';
 
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+const GIFT_COSTS = { tea: 50, coffee: 100, chocolate: 150, rose: 250, prayer_beads: 400, cake: 1000 } as const;
 
 function parseSnapshot(raw: string): RoomSnapshot {
   return JSON.parse(raw) as RoomSnapshot;
@@ -28,7 +29,13 @@ export class RoomSession extends DurableObject<Env> {
           snapshot_json TEXT NOT NULL,
           updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS gift_receipts (
+          receipt_id TEXT PRIMARY KEY,
+          receipt_json TEXT NOT NULL,
+          published_at INTEGER NOT NULL
+        );
         INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (1);
+        INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (2);
       `);
       return Promise.resolve();
     });
@@ -101,6 +108,34 @@ export class RoomSession extends DurableObject<Env> {
       const message = error instanceof Error ? error.message : 'Invalid command';
       const code = /not joined|authenticated seat/.test(message) ? 'forbidden' : error instanceof GameRuleError ? 'rule_error' : 'invalid_request';
       return { ok: false, code, message };
+    }
+  }
+
+  /** Called only by the future verified Firebase receipt bridge, never by a mobile client. */
+  public publishGiftReceipt(input: VerifiedGiftReceipt): GiftPublishResult {
+    const snapshot = this.requireSnapshot();
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.receiptId)) throw new Error('Gift receipt ID is invalid');
+    if (input.roomId !== snapshot.roomId) throw new Error('Gift receipt room does not match');
+    const senderId = safeId(input.senderId, 'Gift sender ID');
+    const recipientId = safeId(input.recipientId, 'Gift recipient ID');
+    if (senderId === recipientId || snapshot.seats[senderId] === undefined || snapshot.seats[recipientId] === undefined) throw new Error('Gift participants must be distinct room members');
+    if (GIFT_COSTS[input.giftId] !== input.chipCost || !Number.isSafeInteger(input.createdAt) || input.createdAt < 0) throw new Error('Gift receipt is invalid');
+    const encoded = JSON.stringify(input);
+    const existing = this.ctx.storage.sql.exec<{ receipt_json: string }>('SELECT receipt_json FROM gift_receipts WHERE receipt_id = ?', input.receiptId).toArray()[0];
+    if (existing !== undefined) {
+      if (existing.receipt_json !== encoded) throw new Error('Gift receipt ID was already used for another payload');
+      return { published: false, receipt: JSON.parse(existing.receipt_json) as VerifiedGiftReceipt };
+    }
+    this.ctx.storage.sql.exec('INSERT INTO gift_receipts (receipt_id, receipt_json, published_at) VALUES (?, ?, ?)', input.receiptId, encoded, Date.now());
+    this.broadcast({ type: 'gift', receipt: input });
+    return { published: true, receipt: input };
+  }
+
+  public tryPublishGiftReceipt(input: VerifiedGiftReceipt): GiftPublishRpcResult {
+    try {
+      return { ok: true, result: this.publishGiftReceipt(input) };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Invalid gift receipt' };
     }
   }
 

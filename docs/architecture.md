@@ -49,6 +49,7 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 
 - Worker routes local-auth room requests and upgrades WebSockets to a room Durable Object; production Firebase token verification remains gated.
 - One SQLite-backed Durable Object is authoritative per room. It stores the latest serializable snapshot and the game state’s bounded processed-command fingerprints.
+- Verified Firebase gift receipts have a separate private RPC ingestion path: the room persists the full receipt before one broadcast, treats an identical replay as a no-op, and rejects receipt-ID collisions. No public/mobile HTTP route exposes this RPC; the production Firebase-to-Cloudflare bridge remains a gated deployment task.
 - Each implemented command includes a command ID, authenticated seat/player ID, expected sequence, and typed payload.
 - The object rejects malformed, idempotency-colliding, out-of-turn, stale-sequence, or unauthorized commands; successful state is persisted before broadcast.
 - Reconnect currently sends the latest full snapshot. Delta/event-cursor resume is a release-readiness backlog item. A 24-hour alarm expires abandoned rooms and closes sockets.

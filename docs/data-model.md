@@ -6,14 +6,23 @@
 
 | Collection | Doc shape (key fields) | Client access | Written by |
 |---|---|---|---|
-| `users/{uid}` | profile, settings | own-doc read/write | client |
-| `users/{uid}/entitlement_mirror` | status, expiresAt | own-doc read | Cloud Functions (RC webhook) only |
-<!-- Model B only: | `users/{uid}/wallet` | credits, updatedAt | own-doc read | Cloud Functions only | -->
+| `users/{uid}` | displayName, username, usernameNormalized, avatarId, visibility, timestamps | own read; safe profile-field create/update only | client + callable |
+| `usernames/{normalized}` | uid, createdAt | none | `reserveUsername` transaction |
+| `friendships/{pairId}` | members, requesterId, recipientId, pending/accepted, timestamps | pair members read only | friend callables |
+| `blocks/{pairId}` | members, blockedBy, createdAt | none | `blockUser` callable |
+| `users/{uid}/devices/{installationId}` | FCM token, platform, updatedAt | owner read; no client write | `registerDevice` callable |
+| `users/{uid}/notifications/{id}` | type, actor/safe deep-link IDs, createdAt, readAt | owner read; owner may update only readAt | callables/server send path |
+| `roomInvites/{id}` | senderId, recipientId, roomId, expiry | recipient read only | `inviteToRoom` callable |
+| `wallets/{uid}` | derived balance, updatedAt | none | server transaction only |
+| `chipLedger/{entryId}` | userId, amount, reason, createdAt | none | server transaction only |
+| `giftReceipts/{idempotencyKey}` | senderId, recipientId, giftId, roomId, chipCost, createdAt | none | `spendGift` transaction |
+| `giftRate/{uid}` / `friendRequestRate/{uid}` | bounded server rate state | none | callables only |
 
 ## Security rules summary
 
 - Root: deny-by-default (`match /{document=**} { allow read, write: if false; }`)
-- `users/{uid}`: `request.auth.uid == uid`
+- `users/{uid}`: `request.auth.uid == uid`; username ownership never changes through direct client writes.
+- friendships are readable only by members; invites only by recipients; notifications only by owners.
 - Server-only collections: no client write rules exist at all
 
 ## Indexes
@@ -25,8 +34,11 @@
 
 | Function | Trigger | Purpose |
 |---|---|---|
-| `revenuecatWebhook` | HTTPS | mirror entitlements / grant credits (verifies Authorization header) |
-| `requestAdminAccess` | callable | compare verified Google email with `ADMIN_EMAILS`; grant `admin` custom claim (App Check enforced) |
-| `adminOverview` | callable | return non-PII aggregate operational health to admin claims only |
+| `reserveUsername` | callable + App Check | transactionally own a normalized username |
+| `searchUsers` | callable + App Check | safe max-20 prefix search with block filtering |
+| `sendFriendRequest` / `respondFriendRequest` / `removeFriend` / `blockUser` | callable + App Check | authoritative friendship state and request limits |
+| `registerDevice` | callable + App Check | server-owned FCM token metadata; token is never returned/logged |
+| `inviteToRoom` | callable + App Check | friend-only expiring room invitation + notification |
+| `spendGift` | callable + App Check | block/rate/balance/idempotency transaction and gift receipt |
 
-Admin authorization lives in custom claims and server secrets, not a client-writable Firestore collection. Adding app-specific moderation/content/credit admin collections still requires an explicit schema/rules decision.
+All callables are source-only until the exact Firebase project/config/deploy mutation is separately approved and read back. No `.firebaserc`, native provider config, or credential is committed.

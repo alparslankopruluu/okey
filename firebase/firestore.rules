@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function self(uid) { return signedIn() && request.auth.uid == uid; }
+    function pairMember(data) { return signedIn() && request.auth.uid in data.members; }
+
+    match /users/{uid} {
+      allow read: if self(uid);
+      allow create: if self(uid)
+        && request.resource.data.keys().hasOnly(['displayName', 'avatarId', 'visibility', 'createdAt', 'updatedAt']);
+      allow update: if self(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'avatarId', 'visibility', 'updatedAt']);
+      allow delete: if false;
+
+      match /devices/{installationId} {
+        allow read: if self(uid);
+        allow write: if false;
+      }
+      match /notifications/{notificationId} {
+        allow read: if self(uid);
+        allow create, delete: if false;
+        allow update: if self(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
+      }
+    }
+
+    match /usernames/{normalized} { allow read, write: if false; }
+    match /friendships/{pairId} {
+      allow read: if pairMember(resource.data);
+      allow write: if false;
+    }
+    match /roomInvites/{inviteId} {
+      allow read: if signedIn() && request.auth.uid == resource.data.recipientId;
+      allow write: if false;
+    }
+    match /chipLedger/{entryId} { allow read, write: if false; }
+    match /giftReceipts/{receiptId} { allow read, write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

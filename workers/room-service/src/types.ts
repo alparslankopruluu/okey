@@ -24,6 +24,25 @@ export interface SubmitCommandInput {
   readonly command: GameCommand;
 }
 
+export interface VerifiedGiftReceipt {
+  readonly receiptId: string;
+  readonly roomId: string;
+  readonly senderId: string;
+  readonly recipientId: string;
+  readonly giftId: 'tea' | 'coffee' | 'chocolate' | 'rose' | 'prayer_beads' | 'cake';
+  readonly chipCost: 50 | 100 | 150 | 250 | 400 | 1000;
+  readonly createdAt: number;
+}
+
+export interface GiftPublishResult {
+  readonly published: boolean;
+  readonly receipt: VerifiedGiftReceipt;
+}
+
+export type GiftPublishRpcResult =
+  | { readonly ok: true; readonly result: GiftPublishResult }
+  | { readonly ok: false; readonly message: string };
+
 export interface SocketAttachment {
   readonly userId: string;
 }

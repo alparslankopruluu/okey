@@ -63,4 +63,17 @@ describe('authoritative room Durable Object', () => {
     expect(snapshot.state.tableMelds.length).toBeGreaterThan(0);
     expect((await room.snapshot('u0')).state).toEqual(snapshot.state);
   }, 20_000);
+
+  it('publishes a verified gift receipt exactly once and rejects an idempotency collision', async () => {
+    const room = env.ROOMS.getByName('gift-room');
+    await room.init({ roomId: 'gift-room', hostUserId: 'alice', variant: 'classic', seed: 17 });
+    await room.join('bob');
+    const receipt = { receiptId: 'receipt_1', roomId: 'gift-room', senderId: 'alice', recipientId: 'bob', giftId: 'tea' as const, chipCost: 50 as const, createdAt: 1_786_512_000_000 };
+    expect(await room.publishGiftReceipt(receipt)).toMatchObject({ published: true, receipt });
+    expect(await room.publishGiftReceipt(receipt)).toMatchObject({ published: false, receipt });
+    const collision = await room.tryPublishGiftReceipt({ ...receipt, giftId: 'coffee', chipCost: 100 });
+    expect(collision.ok).toBe(false);
+    if (collision.ok) throw new Error('Expected gift receipt collision');
+    expect(collision.message).toMatch(/another payload/);
+  });
 });

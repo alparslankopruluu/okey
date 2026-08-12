@@ -30,8 +30,12 @@ This file owns the observed application toolchain. Product scope belongs in
 - `workers/room-service` is a Cloudflare Worker with one SQLite-backed Durable Object
   authority per room. It remains local-only until an exact deploy approval.
 - Firebase, RealtimeKit, RevenueCat, chat, voice, music, feature flags, and wallet access
-  are reached through typed service facades. Provider credentials and production
-  mutations remain human-gated; current adapters are mocks.
+  are reached through typed service facades. React Native Firebase `26.2.0` supplies
+  app/auth/firestore/functions/App Check/messaging in development builds; the committed
+  adapter uses the modular API and does not add `expo-notifications`. Provider credentials,
+  native Firebase config files, and production mutations remain human-gated.
+- `firebase/` contains deny-by-default Firestore rules, App Check-enforced callable
+  Functions, and tests under the non-remote `demo-luma-okey` emulator namespace.
 
 ## Package and quality commands
 
@@ -40,6 +44,8 @@ This file owns the observed application toolchain. Product scope belongs in
 - `npm run lint` — Expo ESLint configuration with zero-warning policy.
 - `npm run typecheck` — mobile, game-core, and Worker strict type checks.
 - `npm test` — Vitest application/core/service tests plus Worker runtime tests.
+- `npm run test:firebase` — selects a local JDK 21+ and runs real Firestore Rules tests
+  against the demo-project emulator (attempts to reach non-emulated services fail).
 - `npm run validate` — all local static and test gates.
 - `npx expo-doctor` — Expo dependency/configuration compatibility.
 - `npm run bundle:ios` / `npm run bundle:android` — production JavaScript export proof.
@@ -48,5 +54,8 @@ This file owns the observed application toolchain. Product scope belongs in
 
 - Node.js `24.7.0`, npm workspaces, Xcode `26.6` (`17F113`).
 - Expo Doctor passed 20/20 on 2026-08-11.
+- Expo Doctor passed 20/20 after RN Firebase integration on 2026-08-12. Production npm
+  audit currently reports 7 moderate and 15 high transitive advisories; npm's suggested
+  direct fixes are incompatible major downgrades, so release stays gated on upstream-compatible fixes.
 - Native device, voice, purchase sandbox, signing, deployment, and store upload remain
   separate acceptance gates and are never implied by JavaScript bundle success.

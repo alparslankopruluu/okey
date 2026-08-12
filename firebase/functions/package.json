@@ -1,0 +1,20 @@
+{
+  "name": "luma-okey-firebase-functions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --config vitest.config.mts"
+  },
+  "dependencies": {
+    "firebase-admin": "14.2.0",
+    "firebase-functions": "7.3.2"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.0"
+  }
+}
