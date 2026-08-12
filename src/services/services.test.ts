@@ -3,6 +3,9 @@ import { calculateDailyClaim, InMemoryChipLedger } from './economy';
 import { MockChatAdapter } from './mock-chat';
 import { MockPurchaseAdapter } from './mock-purchases';
 import { MockVoiceAdapter } from './mock-voice';
+import { GIFT_CATALOG, InMemoryGiftService } from './gifts';
+import { InMemoryFriendshipService } from './mock-social';
+import { InMemoryNotificationCenter } from './notifications';
 
 describe('daily bonus', () => {
   it('uses the seven-day schedule, rejects duplicates, and resets a missed streak', () => {
@@ -49,5 +52,95 @@ describe('social safety mocks', () => {
     expect(voice.join('granted')).toMatchObject({ joined: true, muted: true, recordingEnabled: false });
     expect(voice.setPushToTalk(true)).toMatchObject({ pushToTalkActive: true, muted: false, recordingEnabled: false });
     expect(voice.join('denied')).toMatchObject({ joined: false, pushToTalkActive: false, recordingEnabled: false });
+  });
+});
+
+describe('gift economy', () => {
+  it('uses the fixed catalog, spends only the sender, and is idempotent', () => {
+    expect(GIFT_CATALOG).toEqual([
+      { id: 'tea', chipCost: 50 }, { id: 'coffee', chipCost: 100 }, { id: 'chocolate', chipCost: 150 },
+      { id: 'rose', chipCost: 250 }, { id: 'prayer_beads', chipCost: 400 }, { id: 'cake', chipCost: 1000 },
+    ]);
+    const ledger = new InMemoryChipLedger();
+    ledger.append({ idempotencyKey: 'grant', userId: 'a', amount: 5000, reason: 'initial_grant', createdAt: 0 });
+    const social = new InMemoryFriendshipService();
+    const gifts = new InMemoryGiftService(ledger, social);
+    expect(gifts.send({ idempotencyKey: 'gift-1', senderId: 'a', recipientId: 'b', giftId: 'tea', roomId: 'room_1', now: 10_000 })).toMatchObject({ chipCost: 50, duplicate: false });
+    expect(gifts.send({ idempotencyKey: 'gift-1', senderId: 'a', recipientId: 'b', giftId: 'tea', roomId: 'room_1', now: 10_000 })).toMatchObject({ duplicate: true });
+    expect(ledger.balance('a')).toBe(4950);
+    expect(ledger.balance('b')).toBe(0);
+    expect(() => gifts.send({ idempotencyKey: 'gift-self', senderId: 'a', recipientId: 'a', giftId: 'tea', roomId: 'room_1', now: 20_000 })).toThrow(/yourself/);
+    expect(() => gifts.send({ idempotencyKey: 'gift-fast', senderId: 'a', recipientId: 'b', giftId: 'tea', roomId: 'room_1', now: 12_000 })).toThrow(/cooldown/);
+  });
+
+  it('honors mutual blocks and daily gift spend caps', () => {
+    const ledger = new InMemoryChipLedger();
+    ledger.append({ idempotencyKey: 'grant', userId: 'a', amount: 10_000, reason: 'initial_grant', createdAt: 0 });
+    const social = new InMemoryFriendshipService();
+    social.register({ userId: 'a', username: 'Alice', displayName: 'Alice', now: 0 });
+    social.register({ userId: 'b', username: 'Bora', displayName: 'Bora', now: 0 });
+    const gifts = new InMemoryGiftService(ledger, social);
+    social.block('b', 'a');
+    expect(() => gifts.send({ idempotencyKey: 'blocked', senderId: 'a', recipientId: 'b', giftId: 'tea', roomId: 'room_1', now: 10_000 })).toThrow(/Blocked/);
+    const openSocial = new InMemoryFriendshipService();
+    const capped = new InMemoryGiftService(ledger, openSocial);
+    for (let index = 0; index < 5; index += 1) {
+      capped.send({ idempotencyKey: `cake-${String(index)}`, senderId: 'a', recipientId: 'b', giftId: 'cake', roomId: 'room_1', now: 20_000 + index * 6_000 });
+    }
+    expect(() => capped.send({ idempotencyKey: 'too-much', senderId: 'a', recipientId: 'b', giftId: 'tea', roomId: 'room_1', now: 60_000 })).toThrow(/daily/);
+  });
+
+  it('allows at most twenty gifts in a rolling hour', () => {
+    const ledger = new InMemoryChipLedger();
+    ledger.append({ idempotencyKey: 'grant-hour', userId: 'a', amount: 5000, reason: 'initial_grant', createdAt: 0 });
+    const gifts = new InMemoryGiftService(ledger, { isBlocked: () => false });
+    for (let index = 0; index < 20; index += 1) {
+      gifts.send({ idempotencyKey: `hour-${String(index)}`, senderId: 'a', recipientId: 'b', giftId: 'tea', roomId: 'room_1', now: index * 6_000 });
+    }
+    expect(() => gifts.send({ idempotencyKey: 'hour-20', senderId: 'a', recipientId: 'b', giftId: 'tea', roomId: 'room_1', now: 120_000 })).toThrow(/hourly/);
+  });
+});
+
+describe('friendships and notifications', () => {
+  it('normalizes usernames, hides blocks, and manages friend invitations', () => {
+    const social = new InMemoryFriendshipService();
+    social.register({ userId: 'a', username: 'Alice_1', displayName: 'Alice', now: 0 });
+    social.register({ userId: 'b', username: 'Bora_2', displayName: 'Bora', now: 0 });
+    expect(() => social.register({ userId: 'c', username: 'alice_1', displayName: 'Duplicate', now: 0 })).toThrow(/taken/);
+    expect(social.search('a', 'bo')).toMatchObject([{ userId: 'b' }]);
+    const pending = social.sendRequest('a', 'b', 1);
+    expect(social.respondToRequest('b', 'a', true, 2)).toMatchObject({ status: 'accepted' });
+    expect(social.inviteToRoom({ senderId: 'a', recipientId: 'b', roomId: 'room_1', now: 3, expiresAt: 4 }).id).toBe('invite_1');
+    expect(() => social.renameUsername('a', 'AliceNew', 30 * 24 * 60 * 60 * 1000 - 1)).toThrow(/30 days/);
+    expect(social.renameUsername('a', 'AliceNew', 30 * 24 * 60 * 60 * 1000)).toMatchObject({ username: 'AliceNew' });
+    expect(pending.status).toBe('pending');
+    social.block('a', 'b');
+    expect(social.search('a', 'bo')).toHaveLength(0);
+    expect(() => social.sendRequest('a', 'b', 5)).toThrow(/Blocked/);
+  });
+
+  it('enforces outgoing request limits and lets a recipient reject', () => {
+    const social = new InMemoryFriendshipService();
+    social.register({ userId: 'sender', username: 'Sender', displayName: 'Sender', now: 0 });
+    for (let index = 0; index < 11; index += 1) {
+      social.register({ userId: `u${String(index)}`, username: `Player_${String(index)}`, displayName: `Player ${String(index)}`, now: 0 });
+    }
+    for (let index = 0; index < 10; index += 1) social.sendRequest('sender', `u${String(index)}`, index);
+    expect(() => social.sendRequest('sender', 'u10', 10)).toThrow(/hourly/);
+    const rejected = new InMemoryFriendshipService();
+    rejected.register({ userId: 'a', username: 'Alice', displayName: 'Alice', now: 0 });
+    rejected.register({ userId: 'b', username: 'Bora', displayName: 'Bora', now: 0 });
+    rejected.sendRequest('a', 'b', 0);
+    expect(rejected.respondToRequest('b', 'a', false, 1)).toBeUndefined();
+    expect(rejected.sendRequest('a', 'b', 2)).toMatchObject({ status: 'pending' });
+  });
+
+  it('keeps notification payloads to safe identifiers and tracks read state', () => {
+    const notifications = new InMemoryNotificationCenter();
+    const input = { id: 'notice_1', userId: 'a', kind: 'room_invite' as const, deepLink: { screen: 'room' as const, roomId: 'room_1', inviteId: 'invite_1' }, createdAt: 1 };
+    notifications.create(input);
+    expect(notifications.markRead('a', 'notice_1', 2)).toMatchObject({ readAt: 2 });
+    expect(notifications.create(input)).toMatchObject({ readAt: 2 });
+    expect(() => notifications.create({ id: 'notice_2', userId: 'a', kind: 'gift_received', deepLink: { screen: 'room', roomId: 'https://unsafe.example' }, createdAt: 1 })).toThrow(/safe identifier/);
   });
 });

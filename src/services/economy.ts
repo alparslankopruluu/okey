@@ -15,9 +15,23 @@ export interface LedgerEntry {
   readonly idempotencyKey: string;
   readonly userId: string;
   readonly amount: number;
-  readonly reason: 'initial_grant' | 'daily_bonus' | 'purchase' | 'cosmetic_spend';
+  readonly reason: LedgerReason;
   readonly createdAt: number;
 }
+
+/**
+ * Reasons are intentionally an allow-list: money-like state may only be
+ * represented by an append-only ledger entry with one of these purposes.
+ */
+export type LedgerReason =
+  | 'initial_grant'
+  | 'daily_bonus'
+  | 'purchase'
+  | 'cosmetic_spend'
+  | 'gift_spend'
+  | 'match_stake'
+  | 'match_payout'
+  | 'match_refund';
 
 function previousCalendarDay(isoDay: string): string {
   const date = new Date(`${isoDay}T12:00:00.000Z`);
