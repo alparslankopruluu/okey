@@ -1,6 +1,7 @@
 export * from './bot';
 export * from './game';
 export * from './melds';
+export * from './match';
 export * from './random';
 export * from './replay';
 export * from './scoring';

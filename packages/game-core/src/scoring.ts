@@ -34,15 +34,24 @@ export function settleRound(
   input: { readonly reason: 'wall_exhausted' } | { readonly reason: 'finish'; readonly winnerId: string; readonly discard: Tile; readonly melds: readonly Meld[] },
 ): RoundSettlement {
   if (input.reason === 'wall_exhausted') {
+    const opened101 = state.variant === '101' ? state.players.filter((player) => player.opened) : [];
+    const lowestDeadwood = opened101.length === 0
+      ? undefined
+      : Math.min(...opened101.map((player) => rackPenaltyScore101(player.rack, state) + (player.penalties ?? 0)));
+    const winnerIds = lowestDeadwood === undefined
+      ? []
+      : opened101.filter((player) => rackPenaltyScore101(player.rack, state) + (player.penalties ?? 0) === lowestDeadwood).map((player) => player.id);
     return {
       profile: state.variant === 'classic' ? 'classic-standard-v1' : '101-fixed-open-v1',
       reason: input.reason,
+      winnerIds,
       entries: state.players.map((player) => ({
         playerId: player.id,
-        delta: state.variant === '101' ? player.rack.filter((tile) => isJoker(tile, state.indicator)).length * 101 : 0,
+        delta: state.variant === '101' ? (player.penalties ?? 0) : 0,
         deadwood: state.variant === '101' ? rackPenaltyScore101(player.rack, state) : rackFaceScore(player.rack, state),
         opened: player.opened,
-        winner: false,
+        winner: winnerIds.includes(player.id),
+        penalties: player.penalties ?? 0,
       })),
     };
   }
@@ -61,6 +70,7 @@ export function settleRound(
         deadwood: player.id === input.winnerId ? 0 : rackFaceScore(player.rack, state),
         opened: player.opened,
         winner: player.id === input.winnerId,
+        penalties: player.penalties ?? 0,
       })),
     };
   }
@@ -87,7 +97,7 @@ export function settleRound(
         const pairLoserMultiplier = player.openingMode === 'pairs' ? 2 : 1;
         delta = deadwood * pairLoserMultiplier * baseMultiplier * jokerMultiplier;
       }
-      return { playerId: player.id, delta, deadwood, opened: player.opened, winner };
+      return { playerId: player.id, delta, deadwood, opened: player.opened, winner, penalties: player.penalties ?? 0 };
     }),
   };
 }

@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { playDeterministicBotRound, playDeterministicBotTurn } from './bot';
 import { applyCommand, createGame } from './game';
+import { createMatch, createMatchRound, recordMatchRound } from './match';
 import { validateMeld, validateMeldCollection } from './melds';
 import { replay } from './replay';
 import { rackPenaltyScore101, settleRound } from './scoring';
@@ -59,6 +60,20 @@ describe('meld validation', () => {
 });
 
 describe('deterministic state machine', () => {
+  it.each([
+    ['classic', 15, 14, 48],
+    ['101', 22, 21, 20],
+  ] as const)('deals %s with a %i/%i rack split and %i wall tiles', (variant, starterTiles, otherTiles, wallTiles) => {
+    const game = createGame({ gameId: `deal-${variant}`, variant, playerIds: ['a', 'b', 'c', 'd'], seed: 1, dealerIndex: 2 });
+    expect(game.players.map((player) => player.rack.length)).toEqual([otherTiles, otherTiles, starterTiles, otherTiles]);
+    expect(game.wall).toHaveLength(wallTiles);
+    expect(game.turnIndex).toBe(2);
+  });
+
+  it('rejects invalid dealer seats and duplicate players', () => {
+    expect(() => createGame({ gameId: 'bad-dealer', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 1, dealerIndex: 4 })).toThrow(/Dealer index/);
+    expect(() => createGame({ gameId: 'dup', variant: 'classic', playerIds: ['a', 'a', 'c', 'd'], seed: 1 })).toThrow(/unique/);
+  });
   it('deals the same state for the same seed', () => {
     const options = { gameId: 'g1', variant: 'classic' as const, playerIds: ['a', 'b', 'c', 'd'] as const, seed: 42 };
     expect(createGame(options)).toEqual(createGame(options));
@@ -98,6 +113,17 @@ describe('deterministic state machine', () => {
       expect(allIds).toHaveLength(106);
       expect(new Set(allIds)).toHaveLength(106);
     }));
+  });
+
+  it('preserves discard provenance without duplicating the physical tile', () => {
+    const game = createGame({ gameId: 'discard-history', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 2 });
+    const tile = game.players[0]?.rack[0];
+    if (tile === undefined) throw new Error('Expected a tile');
+    const discarded = applyCommand(game, { type: 'discard', commandId: 'discard', playerId: 'a', expectedSequence: 0, tileId: tile.id }).state;
+    expect(discarded.discardHistory).toEqual([{ tileId: tile.id, playerId: 'a', sequence: 1 }]);
+    const picked = applyCommand(discarded, { type: 'draw_discard', commandId: 'pick', playerId: 'b', expectedSequence: 1 }).state;
+    expect(picked.discards).toHaveLength(0);
+    expect(picked.discardHistory.at(-1)).toMatchObject({ tileId: tile.id, playerId: 'a', pickedBy: 'b' });
   });
 });
 
@@ -227,7 +253,7 @@ describe('legal round finish', () => {
 });
 
 describe('101 opening', () => {
-  it('rejects a low-point opening', () => {
+  it('penalizes a valid but low-point opening and advances the turn', () => {
     const game = createGame({ gameId: '101', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 2 });
     const rack = [tileByValue('blue', 1), tileByValue('blue', 2), tileByValue('blue', 3)];
     const player = game.players[0];
@@ -235,7 +261,22 @@ describe('101 opening', () => {
     if (player === undefined) throw new Error('Expected first player');
     const state = { ...game, players: [{ ...player, rack }, ...game.players.slice(1)] };
     const meld: Meld = { kind: 'sequence', tileIds: rack.map((tile) => tile.id) };
-    expect(() => applyCommand(state, { type: 'open_melds', commandId: 'open', playerId: 'a', expectedSequence: 0, melds: [meld] })).toThrow(/101 points/);
+    const result = applyCommand(state, { type: 'open_melds', commandId: 'open', playerId: 'a', expectedSequence: 0, melds: [meld] });
+    expect(result.state.players[0]?.penalties).toBe(101);
+    expect(result.state.turnIndex).toBe(1);
+    expect(result.state.phase).toBe('awaiting_draw');
+  });
+
+  it('permits the previous discard in Classic but requires an opened 101 player', () => {
+    const classic = createGame({ gameId: 'classic-pick', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 2 });
+    const tile = classic.players[0]?.rack[0];
+    if (tile === undefined) throw new Error('Expected a tile');
+    const classicDiscarded = applyCommand(classic, { type: 'discard', commandId: 'classic-discard', playerId: 'a', expectedSequence: 0, tileId: tile.id }).state;
+    expect(applyCommand(classicDiscarded, { type: 'draw_discard', commandId: 'classic-pick', playerId: 'b', expectedSequence: 1 }).state.players[1]?.rack).toContainEqual(tile);
+
+    const game101 = createGame({ gameId: '101-pick', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 2 });
+    const discarded101 = applyCommand(game101, { type: 'discard', commandId: '101-discard', playerId: 'a', expectedSequence: 0, tileId: game101.players[0]?.rack[0]?.id ?? '' }).state;
+    expect(() => applyCommand(discarded101, { type: 'draw_discard', commandId: '101-pick', playerId: 'b', expectedSequence: 1 })).toThrow(/Open before/);
   });
 
   it('moves opened tiles from the rack to authoritative table melds and supports a legal layoff', () => {
@@ -286,6 +327,40 @@ describe('101 opening', () => {
     const selection = findOpeningMelds101(rack, indicator, 101, 5, true);
     expect(selection?.points).toBeGreaterThanOrEqual(101);
     expect(validateMeldCollection(selection?.melds ?? [], rack, indicator).points).toBe(selection?.points);
+  });
+
+  it('limits a player to two tiles on one table meld during a turn', () => {
+    const game = createGame({ gameId: 'layoff-limit', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 3 });
+    const base = sequence('blue', [5, 6, 7]);
+    const additions = [tileByValue('blue', 4), tileByValue('blue', 8), tileByValue('blue', 9), tileByValue('yellow', 1)];
+    const first = game.players[0];
+    if (first === undefined) throw new Error('Expected player');
+    const state = {
+      ...game,
+      players: [{ ...first, opened: true, rack: additions }, ...game.players.slice(1)],
+      tableMelds: [{ id: 'table', ownerId: 'b', kind: 'sequence' as const, tiles: base }],
+    };
+    const afterFirst = applyCommand(state, { type: 'extend_meld', commandId: 'one', playerId: 'a', expectedSequence: 0, tableMeldId: 'table', tileIds: [additions[0]?.id ?? ''] }).state;
+    const afterSecond = applyCommand(afterFirst, { type: 'extend_meld', commandId: 'two', playerId: 'a', expectedSequence: 1, tableMeldId: 'table', tileIds: [additions[1]?.id ?? ''] }).state;
+    expect(() => applyCommand(afterSecond, { type: 'extend_meld', commandId: 'three', playerId: 'a', expectedSequence: 2, tableMeldId: 'table', tileIds: [additions[2]?.id ?? ''] })).toThrow(/At most two/);
+  });
+});
+
+describe('match state', () => {
+  it('rotates starters, preserves metadata, and resolves aggregate ties deterministically', () => {
+    const match = createMatch({ gameId: 'match', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 9, config: { roundCount: 2, openingThresholdMode: 'progressive', assistanceMode: 'unassisted', economyMode: 'mock_stake_100' } });
+    expect(createMatchRound(match).dealerIndex).toBe(0);
+    const settlement = {
+      profile: '101-fixed-open-v1' as const,
+      reason: 'wall_exhausted' as const,
+      winnerIds: ['a', 'b'],
+      entries: ['a', 'b', 'c', 'd'].map((playerId) => ({ playerId, delta: 0, deadwood: playerId === 'a' || playerId === 'b' ? 5 : 8, opened: true, winner: playerId === 'a' || playerId === 'b' })),
+    };
+    const afterOne = recordMatchRound(match, settlement);
+    expect(createMatchRound(afterOne).dealerIndex).toBe(1);
+    const complete = recordMatchRound(afterOne, settlement);
+    expect(complete.winnerIds).toEqual(['a', 'b']);
+    expect(complete.config).toMatchObject({ assistanceMode: 'unassisted', economyMode: 'mock_stake_100' });
   });
 });
 
@@ -354,12 +429,13 @@ describe('round settlement', () => {
     expect(rackPenaltyScore101([tileByValue('red', 1), tileByValue('blue', 9)], state)).toBe(110);
   });
 
-  it('scores stock exhaustion only for actual jokers in 101', () => {
+  it('ranks only opened 101 players by deadwood when the wall exhausts', () => {
     const game = createGame({ gameId: 'scores-wall', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 9 });
     const players = game.players.map((player, index) => index === 0
-      ? { ...player, rack: [tileByValue('red', 1), tileByValue('blue', 5)] }
+      ? { ...player, opened: true, rack: [tileByValue('red', 1), tileByValue('blue', 5)] }
       : { ...player, rack: [tileByValue('blue', 5, index % 2 as 0 | 1)] });
     const settlement = settleRound({ ...game, indicator, players }, { reason: 'wall_exhausted' });
-    expect(settlement.entries.map((entry) => entry.delta)).toEqual([101, 0, 0, 0]);
+    expect(settlement.winnerIds).toEqual(['a']);
+    expect(settlement.entries.map((entry) => entry.winner)).toEqual([true, false, false, false]);
   });
 });

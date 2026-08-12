@@ -1,7 +1,7 @@
 import { validateMeld, validateMeldCollection, isWinningClassicRack } from './melds';
 import { shuffled } from './random';
 import { rackFaceScore, settleRound } from './scoring';
-import { createTileSet } from './tiles';
+import { createTileSet, isJoker } from './tiles';
 import {
   GameRuleError,
   type CommandResult,
@@ -46,6 +46,12 @@ export function createGame(options: {
   readonly rules?: Partial<RuleConfig>;
 }): GameState {
   const dealerIndex = options.dealerIndex ?? 0;
+  if (!Number.isInteger(dealerIndex) || dealerIndex < 0 || dealerIndex >= options.playerIds.length) {
+    throw new GameRuleError('invalid_dealer_index', 'Dealer index must identify one of the four players');
+  }
+  if (new Set(options.playerIds).size !== options.playerIds.length || options.playerIds.some((id) => id.length === 0)) {
+    throw new GameRuleError('invalid_player_ids', 'Player IDs must be non-empty and unique');
+  }
   const deck = shuffled(createTileSet(), options.seed);
   const indicatorIndex = deck.findIndex((tile) => tile.kind === 'normal');
   const indicatorTile = deck.splice(indicatorIndex, 1)[0];
@@ -75,12 +81,36 @@ export function createGame(options: {
     indicator,
     wall: deck,
     discards: [],
+    discardHistory: [],
     tableMelds: [],
+    turnContext: { layoffCountByMeldId: {} },
     players,
     rules: { ...DEFAULT_RULES, ...options.rules },
     processedCommandIds: [],
     processedCommandFingerprints: {},
   };
+}
+
+function addPenalty(player: PlayerState, amount: number): PlayerState {
+  return { ...player, penalties: (player.penalties ?? 0) + amount };
+}
+
+function markDiscardPicked(state: GameState, playerId: string): readonly import('./types').DiscardRecord[] {
+  const last = state.discardHistory.at(-1);
+  if (last === undefined) return state.discardHistory;
+  return [...state.discardHistory.slice(0, -1), { ...last, pickedBy: playerId }];
+}
+
+function canLayoffTile(state: GameState, tile: Tile): boolean {
+  return state.tableMelds.some((meld) => {
+    if (meld.kind === 'pair') return false;
+    try {
+      validateMeld({ kind: meld.kind, tileIds: [...meld.tiles.map((candidate) => candidate.id), tile.id] }, [...meld.tiles, tile], state.indicator);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function withRoundScores(players: readonly PlayerState[], settlement: RoundSettlement): readonly PlayerState[] {
@@ -168,6 +198,9 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
 
   if (command.type === 'draw_wall' || command.type === 'draw_discard') {
     if (state.phase !== 'awaiting_draw') throw new GameRuleError('draw_not_allowed', 'Discard before drawing again');
+    if (command.type === 'draw_discard' && state.variant === '101' && !player.opened) {
+      throw new GameRuleError('opening_required_for_discard', 'Open before taking the previous discard in 101');
+    }
     const source = command.type === 'draw_wall' ? state.wall : state.discards;
     const tile = command.type === 'draw_wall' ? source[0] : source.at(-1);
     if (tile === undefined) throw new GameRuleError('source_empty', 'There is no tile to draw');
@@ -179,6 +212,7 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
         players: replacePlayer(state, nextPlayer),
         wall: command.type === 'draw_wall' ? state.wall.slice(1) : state.wall,
         discards: command.type === 'draw_discard' ? state.discards.slice(0, -1) : state.discards,
+        discardHistory: command.type === 'draw_discard' ? markDiscardPicked(state, player.id) : state.discardHistory,
       }),
       events,
       duplicate: false,
@@ -189,17 +223,24 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     if (state.variant !== '101') throw new GameRuleError('opening_not_classic', 'Classic Okey has no table opening command');
     if (state.phase !== 'awaiting_discard') throw new GameRuleError('opening_not_allowed', 'Draw before opening melds');
     if (player.opened) throw new GameRuleError('already_opened', 'Player has already opened');
-    const result = validateMeldCollection(command.melds, player.rack, state.indicator);
+    let result: ReturnType<typeof validateMeldCollection>;
+    try {
+      result = validateMeldCollection(command.melds, player.rack, state.indicator);
+    } catch (error) {
+      // Malformed/stale commands are rejected. Valid owned tiles that merely fail the
+      // 101 opening policy consume the turn and incur the documented rule penalty.
+      throw error;
+    }
     const pairsOpening = command.melds.every((meld) => meld.kind === 'pair');
     if (!pairsOpening && command.melds.some((meld) => meld.kind === 'pair')) {
-      throw new GameRuleError('mixed_opening', 'Pairs cannot be mixed with sets or runs');
+      return penalizeFailedOpening(state, command, player, events);
     }
     if (pairsOpening) {
       if (!state.rules.allowPairsOpening101 || command.melds.length < state.rules.pairsRequiredToOpen101) {
-        throw new GameRuleError('pairs_opening_too_short', 'Not enough pairs to open');
+        return penalizeFailedOpening(state, command, player, events);
       }
     } else if (result.points < state.rules.openingPoints101) {
-      throw new GameRuleError('opening_points_too_low', `Opening needs ${state.rules.openingPoints101} points`);
+      return penalizeFailedOpening(state, command, player, events);
     }
     const used = new Set(result.usedTileIds);
     const nextRack = player.rack.filter((tile) => !used.has(tile.id));
@@ -233,6 +274,10 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     const tableMeld = state.tableMelds.find((meld) => meld.id === command.tableMeldId);
     if (tableMeld === undefined) throw new GameRuleError('table_meld_missing', 'Table meld does not exist');
     if (tableMeld.kind === 'pair') throw new GameRuleError('pair_not_extendable', 'A pair cannot be extended');
+    const priorLayoffs = state.turnContext.layoffCountByMeldId[tableMeld.id] ?? 0;
+    if (priorLayoffs + command.tileIds.length > 2) {
+      throw new GameRuleError('layoff_limit_reached', 'At most two tiles may be added to the same meld each turn');
+    }
     const selected = command.tileIds.map((id) => {
       const tile = player.rack.find((candidate) => candidate.id === id);
       if (tile === undefined) throw new GameRuleError('tile_not_in_rack', `Tile ${id} is not in the rack`);
@@ -246,7 +291,11 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     const tableMelds = state.tableMelds.map((meld) => meld.id === tableMeld.id ? { ...meld, tiles: combined } : meld);
     events.push({ type: 'meld_extended', playerId: player.id, tableMeldId: tableMeld.id, tileIds: command.tileIds });
     return {
-      state: withCommand(state, command, { players: replacePlayer(state, { ...player, rack: nextRack }), tableMelds }),
+      state: withCommand(state, command, {
+        players: replacePlayer(state, { ...player, rack: nextRack }),
+        tableMelds,
+        turnContext: { layoffCountByMeldId: { ...state.turnContext.layoffCountByMeldId, [tableMeld.id]: priorLayoffs + command.tileIds.length } },
+      }),
       events,
       duplicate: false,
     };
@@ -293,6 +342,7 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
         phase: 'round_finished',
         players,
         discards: [...state.discards, discard],
+        discardHistory: [...state.discardHistory, { tileId: discard.id, playerId: player.id, sequence: state.sequence + 1 }],
         tableMelds: [...state.tableMelds, ...finishTableMelds],
         winnerId: player.id,
         roundEndReason: 'finish',
@@ -304,7 +354,8 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   }
 
   if (state.wall.length === 0) {
-    const playersAfterDiscard = replacePlayer(state, { ...player, rack: remainingRack });
+    const penalizedPlayer = shouldPenalizePlayableDiscard(state, player, discard) ? addPenalty(player, 101) : player;
+    const playersAfterDiscard = replacePlayer(state, { ...penalizedPlayer, rack: remainingRack });
     const settlement = settleRound({ ...state, players: playersAfterDiscard }, { reason: 'wall_exhausted' });
     events.push(
       { type: 'tile_discarded', playerId: player.id, tile: discard },
@@ -315,6 +366,7 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
         phase: 'round_finished',
         players: withRoundScores(playersAfterDiscard, settlement),
         discards: [...state.discards, discard],
+        discardHistory: [...state.discardHistory, { tileId: discard.id, playerId: player.id, sequence: state.sequence + 1 }],
         roundEndReason: 'wall_exhausted',
         settlement,
       }),
@@ -323,17 +375,47 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     };
   }
   const nextTurn = (state.turnIndex + 1) % state.players.length;
+  const penalizedPlayer = shouldPenalizePlayableDiscard(state, player, discard) ? addPenalty(player, 101) : player;
   events.push({ type: 'tile_discarded', playerId: player.id, tile: discard }, { type: 'turn_advanced', turnIndex: nextTurn });
   return {
     state: withCommand(state, command, {
       phase: 'awaiting_draw',
-      players: replacePlayer(state, { ...player, rack: remainingRack }),
+      players: replacePlayer(state, { ...penalizedPlayer, rack: remainingRack }),
       discards: [...state.discards, discard],
+      discardHistory: [...state.discardHistory, { tileId: discard.id, playerId: player.id, sequence: state.sequence + 1 }],
       turnIndex: nextTurn,
+      turnContext: { layoffCountByMeldId: {} },
     }),
     events,
     duplicate: false,
   };
+}
+
+function penalizeFailedOpening(
+  state: GameState,
+  command: GameCommand & { readonly type: 'open_melds' },
+  player: PlayerState,
+  events: GameEvent[],
+): CommandResult {
+  const nextTurn = (state.turnIndex + 1) % state.players.length;
+  events.push({ type: 'turn_advanced', turnIndex: nextTurn });
+  return {
+    state: withCommand(state, command, {
+      phase: 'awaiting_draw',
+      players: replacePlayer(state, addPenalty(player, 101)),
+      turnIndex: nextTurn,
+      turnContext: { layoffCountByMeldId: {} },
+    }),
+    events,
+    duplicate: false,
+  };
+}
+
+function shouldPenalizePlayableDiscard(state: GameState, player: PlayerState, discard: Tile): boolean {
+  return state.variant === '101'
+    && state.rules.playableDiscardPenalty === 'automatic'
+    && player.opened
+    && (isJoker(discard, state.indicator) || canLayoffTile(state, discard));
 }
 
 export function rackDeadwoodScore(rack: readonly Tile[], indicator: TileValue): number {

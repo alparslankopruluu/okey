@@ -39,6 +39,7 @@ export interface RoundScoreEntry {
   readonly deadwood: number;
   readonly opened: boolean;
   readonly winner: boolean;
+  readonly penalties?: number;
 }
 
 export interface RoundSettlement {
@@ -46,6 +47,8 @@ export interface RoundSettlement {
   readonly reason: RoundEndReason;
   readonly finishStyle?: FinishStyle;
   readonly winnerId?: string;
+  /** Multiple winners are possible when a 101 wall exhausts. */
+  readonly winnerIds?: readonly string[];
   readonly entries: readonly RoundScoreEntry[];
 }
 
@@ -55,6 +58,46 @@ export interface PlayerState {
   readonly opened: boolean;
   readonly openingMode?: OpeningMode;
   readonly roundScore: number;
+  /** Rule penalties accrued during this hand, separate from deadwood. */
+  readonly penalties?: number;
+}
+
+/** Historical ownership metadata. The tile itself remains only in `discards`. */
+export interface DiscardRecord {
+  readonly tileId: string;
+  readonly playerId: string;
+  readonly sequence: number;
+  readonly pickedBy?: string;
+}
+
+export interface TurnContext {
+  readonly layoffCountByMeldId: Readonly<Record<string, number>>;
+}
+
+export interface MatchConfig {
+  readonly openingThresholdMode: 'fixed' | 'progressive';
+  readonly roundCount: 1 | 2 | 3 | 4;
+  readonly assistanceMode: 'assisted' | 'unassisted';
+  readonly economyMode: 'casual' | 'mock_stake_100';
+}
+
+export interface MatchRoundSummary {
+  readonly round: number;
+  readonly starterIndex: number;
+  readonly settlement: RoundSettlement;
+}
+
+export interface MatchState {
+  readonly gameId: string;
+  readonly variant: GameVariant;
+  readonly playerIds: readonly [string, string, string, string];
+  readonly seed: number;
+  readonly config: MatchConfig;
+  readonly completedRounds: readonly MatchRoundSummary[];
+  readonly penaltiesByPlayerId: Readonly<Record<string, number>>;
+  readonly lastSuccessfulSeriesOpeningPoints?: number;
+  readonly lastSuccessfulPairsOpeningCount?: number;
+  readonly winnerIds: readonly string[];
 }
 
 export interface RuleConfig {
@@ -82,7 +125,9 @@ export interface GameState {
   readonly indicator: TileValue;
   readonly wall: readonly Tile[];
   readonly discards: readonly Tile[];
+  readonly discardHistory: readonly DiscardRecord[];
   readonly tableMelds: readonly TableMeld[];
+  readonly turnContext: TurnContext;
   readonly players: readonly PlayerState[];
   readonly rules: RuleConfig;
   readonly processedCommandIds: readonly string[];

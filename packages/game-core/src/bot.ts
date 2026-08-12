@@ -104,6 +104,8 @@ export function playDeterministicBotTurn(initial: GameState, decisionIndex: numb
   if (state.variant === '101') {
     let extension = findTableExtension(state, player.id);
     while (extension !== undefined) {
+      const alreadyAdded = state.turnContext.layoffCountByMeldId[extension.tableMeldId] ?? 0;
+      if (alreadyAdded + extension.tileIds.length > 2) break;
       submit({
         type: 'extend_meld',
         commandId: `${commandPrefix}-${state.sequence}-extend`,
