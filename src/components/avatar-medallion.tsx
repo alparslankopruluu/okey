@@ -18,7 +18,18 @@ export function AvatarMedallion({ index, size = 64, active = false }: { index: n
         },
       ]}
     >
-      <Image source={source} style={{ width: size - 4, height: size - 4, borderRadius: (size - 4) / 2 }} resizeMode="cover" />
+      <View
+        style={[
+          styles.imageMask,
+          {
+            width: size - 6,
+            height: size - 6,
+            borderRadius: (size - 6) / 2,
+          },
+        ]}
+      >
+        <Image source={source} style={styles.image} resizeMode="cover" />
+      </View>
     </View>
   );
 }
@@ -32,4 +43,11 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 0 },
   },
+  imageMask: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: palette.inkRaised,
+  },
+  image: { width: '100%', height: '100%' },
 });
