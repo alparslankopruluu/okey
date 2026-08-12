@@ -24,6 +24,11 @@ export default function SettingsScreen() {
         </View>
       </View>
       <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.sound')}</Text>
+        <SettingRow title={t('settings.effects')} body={t('settings.effectsBody')} value={store.effectsEnabled} onToggle={store.toggleEffects} />
+        <SettingRow title={t('settings.ambient')} body={t('settings.ambientBody')} value={store.ambientEnabled} onToggle={store.toggleAmbient} />
+      </View>
+      <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.theme')}</Text>
         <SettingRow title={t('settings.theme')} body={store.appearance === 'dark' ? 'Midnight' : 'Pearl'} value={store.appearance === 'dark'} onToggle={store.toggleAppearance} />
         <SettingRow title={t('settings.motion')} value={store.reducedMotion} onToggle={store.toggleReducedMotion} />

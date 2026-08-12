@@ -17,6 +17,7 @@ packages/
 workers/
   room-service/             # Cloudflare Worker + per-room Durable Object
 assets/
+  audio/                    # deterministic synthetic effects/ambience/dev loops
   concepts/                 # generated concept explorations
   game/                     # curated production candidates; deterministic tile glyphs excluded
 docs/                       # product memory, asset bible, contracts, evidence
@@ -64,7 +65,10 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 | `PurchasesService` | offerings, purchase, restore | RevenueCat mock |
 | `VoiceService` | PTT, mute, permission, reconnect | RealtimeKit mock |
 | `ChatService` | TTL messages, filter/rate/mute/block/report | local/room mock |
-| `MusicService` | local play/pause/track/volume | silent mock until licensed assets |
+| `AudioProvider` | local music/effect/ambience channels, PTT duck, app lifecycle | bundled deterministic synthetic development assets |
+| `FriendshipService` | username search, request/accept/remove/block/invite | in-memory mock with rate limits |
+| `GiftService` | server-shaped idempotent gift spend receipt | in-memory ledger-backed mock; recipient gets no value |
+| `NotificationCenter` | safe typed notification/deep-link state | local mock; FCM adapter gated |
 | `AnalyticsService` | typed redacted events | planned mock; no provider SDK |
 
 ## Deployment boundaries
@@ -81,3 +85,4 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 - React state does not update per animation frame. Asset textures are bounded and preloaded.
 - Standard target is 60 FPS; device heuristics can select controlled 30 FPS, fewer particles, simpler shadows, and no parallax.
 - Reduced Motion replaces deal/discard travel and depth/parallax with short fades/state snaps while preserving turn feedback.
+- Authoritative game-state deltas trigger effects after reducer commit. Music, effects, and speech-free cafe ambience have separate preferences; PTT ducks music/ambience, and backgrounding pauses all table sound.

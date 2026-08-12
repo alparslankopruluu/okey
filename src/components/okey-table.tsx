@@ -1,12 +1,13 @@
 import { Canvas, Circle, LinearGradient, RoundedRect, vec } from '@shopify/react-native-skia';
 import type { GameState, TableMeld, Tile } from '@luma/game-core';
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { AvatarMedallion } from './avatar-medallion';
 import { TileFace } from './tile-face';
 import { palette, radius } from '../theme/tokens';
+import { images } from '../assets';
 
 export interface SeatDiscard {
   readonly playerId: string;
@@ -20,7 +21,8 @@ export interface TableGiftEvent {
   readonly id: string;
   readonly fromSeatIndex: number;
   readonly toSeatIndex: number;
-  readonly label: string;
+  readonly giftId: keyof typeof images.gifts;
+  readonly accessibilityLabel: string;
 }
 
 interface OkeyTableProps {
@@ -35,6 +37,7 @@ interface OkeyTableProps {
   readonly indicatorTile?: Tile | undefined;
   readonly reducedMotion?: boolean | undefined;
   readonly giftEvent?: TableGiftEvent | undefined;
+  readonly onSeatPress?: ((seatIndex: number) => void) | undefined;
 }
 
 interface SeatPosition {
@@ -115,7 +118,7 @@ function GiftFlight({ event, width, height, reducedMotion }: { event: TableGiftE
   }));
   return (
     <Animated.View pointerEvents="none" accessibilityElementsHidden style={[styles.gift, { left: from.x - 20, top: from.y - 20 }, animatedStyle]}>
-      <Text numberOfLines={1} style={styles.giftLabel}>{event.label}</Text>
+      <Image accessibilityLabel={event.accessibilityLabel} source={images.gifts[event.giftId]} style={styles.giftImage} />
     </Animated.View>
   );
 }
@@ -142,6 +145,7 @@ export function OkeyTable({
   indicatorTile,
   reducedMotion = false,
   giftEvent,
+  onSeatPress,
 }: OkeyTableProps) {
   const { t } = useTranslation();
   const compact = height < 250 || width < 350;
@@ -186,7 +190,9 @@ export function OkeyTable({
       )}
       {state.players.map((player, index) => (
         <View key={player.id} style={[styles.seat, positions[index]]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('a11y.playerProfile', { player: playerNames[index] ?? player.id })} disabled={onSeatPress === undefined} onPress={() => onSeatPress?.(index)}>
           <AvatarMedallion index={index} size={index === 0 ? seatSize + 8 : seatSize} active={state.turnIndex === index} />
+          </Pressable>
           <Text numberOfLines={1} style={[styles.name, state.turnIndex === index && styles.activeName]}>{playerNames[index] ?? player.id}</Text>
           <Text style={styles.count}>{player.rack.length}</Text>
           {visibleDiscards
@@ -227,7 +233,7 @@ const styles = StyleSheet.create({
   meldArea: { position: 'absolute', left: '24%', right: '24%', top: '25%', alignItems: 'center', gap: 4 },
   meldAreaCompact: { left: '27%', right: '27%', top: '27%' },
   meld: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: radius.sm, backgroundColor: 'rgba(10,16,40,0.32)' },
-  gift: { position: 'absolute', width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.inkRaised, borderColor: palette.lilac, borderWidth: 1 },
-  giftLabel: { color: palette.pearl, fontSize: 18 },
+  gift: { position: 'absolute', width: 46, height: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.inkRaised, borderColor: palette.lilac, borderWidth: 1, overflow: 'hidden' },
+  giftImage: { width: 42, height: 42 },
   winnerGlow: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(41,225,214,0.08)', borderWidth: 2, borderColor: 'rgba(184,155,255,0.7)', borderRadius: radius.lg },
 });

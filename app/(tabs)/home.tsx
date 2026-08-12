@@ -10,6 +10,8 @@ import { Screen } from '../../src/components/screen';
 import { useAppTheme } from '../../src/hooks/use-app-theme';
 import { useAppStore } from '../../src/stores/app-store';
 import { palette, radius, space } from '../../src/theme/tokens';
+import { NotificationBell, type NotificationPreview } from '../../src/components/notification-sheet';
+import { useState } from 'react';
 
 export default function HomeScreen() {
   const { t } = useTranslation();
@@ -22,14 +24,22 @@ export default function HomeScreen() {
   const claimDaily = useAppStore((state) => state.claimDaily);
   const today = new Date().toISOString().slice(0, 10);
   const claimed = lastDailyClaim === today;
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationPreview[]>([
+    { id: 'welcome-request', kind: 'friend_request', actor: 'Ada', read: false },
+    { id: 'welcome-gift', kind: 'gift_received', actor: 'Mert', read: false },
+  ]);
   return (
     <Screen
       eyebrow={t('home.greeting')}
       title={t('appName')}
       right={(
-        <Pressable accessibilityRole="button" accessibilityLabel={t('settings.music')} onPress={toggleMusic} style={[styles.music, { backgroundColor: colors.surface }]}>
-          <Music2 size={19} color={musicPlaying ? palette.aquaDeep : colors.muted} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <NotificationBell notifications={notifications} visible={notificationsOpen} onOpen={() => setNotificationsOpen(true)} onClose={() => setNotificationsOpen(false)} onRead={(id) => setNotifications((items) => items.map((item) => item.id === id ? { ...item, read: true } : item))} />
+          <Pressable accessibilityRole="button" accessibilityLabel={t('settings.music')} onPress={toggleMusic} style={[styles.music, { backgroundColor: colors.surface }]}>
+            <Music2 size={19} color={musicPlaying ? palette.aquaDeep : colors.muted} />
+          </Pressable>
+        </View>
       )}
     >
       <View style={styles.balanceRow} accessibilityLabel={t('a11y.chips', { count: chips })}>
@@ -82,6 +92,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   music: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { flexDirection: 'row', gap: space.xs },
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   balance: { fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
   balanceLabel: { fontSize: 13 },

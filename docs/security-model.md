@@ -18,6 +18,8 @@
 | reports/blocks/mutes | private/safety | Firebase moderation boundary | policy-defined, minimal | reporter and moderators by role; no public exposure |
 | chip ledger/purchase transaction IDs | account/financial-adjacent | Firebase/RevenueCat server boundary | accounting/fraud window + deletion-policy exceptions | read-only derived balance on client |
 | analytics/crash/performance | pseudonymous | Firebase | configured retention, consent/privacy labels | no chat/voice content, tile rack, token, or raw provider error |
+| friends, requests, room invites, gift receipts | account/private | Firebase social adapter | account lifetime or short invite expiry | participants only; blocked pairs mutually hidden |
+| FCM token metadata | secret/device | Firebase device subcollection | refreshed and stale tokens removed | owner/server only; never payload/log/UI |
 
 ## Trust boundaries and controls
 
@@ -38,6 +40,8 @@
 - VIP cannot improve tile distribution, rule access, score, matchmaking priority, or bot difficulty.
 - Purchased-chip stake rooms are compile/runtime feature-flagged OFF for production until documented legal and store classification approval.
 - Random paid items are excluded from V1.
+- Gifts debit the sender through an idempotent `gift_spend` ledger entry and provide the recipient only animation/collection history. Cooldown, hourly/daily caps, block policy, and nonnegative balance are enforced at the authority boundary.
+- Push payloads may contain only notification type, notification ID, and safe deep-link identifiers; no chat text, rack, balance, or token.
 - Marketing never claims guaranteed winnings, favorable odds, income, or gambling equivalence.
 
 ## Incident and review readiness

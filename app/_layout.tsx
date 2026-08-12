@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppStore } from '../src/stores/app-store';
+import { AudioProvider } from '../src/audio/audio-provider';
 
 export default function RootLayout() {
   const appearance = useAppStore((state) => state.appearance);
@@ -11,8 +12,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar style={appearance === 'dark' ? 'light' : 'dark'} />
-        <Stack screenOptions={{ headerShown: false, animation: reducedMotion ? 'none' : 'fade' }}>
+        <AudioProvider>
+          <StatusBar style={appearance === 'dark' ? 'light' : 'dark'} />
+          <Stack screenOptions={{ headerShown: false, animation: reducedMotion ? 'none' : 'fade' }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="welcome" />
           <Stack.Screen name="(tabs)" />
@@ -21,7 +23,8 @@ export default function RootLayout() {
           <Stack.Screen name="offline" options={{ presentation: 'card' }} />
           <Stack.Screen name="game/[roomId]" options={{ gestureEnabled: false }} />
           <Stack.Screen name="safety" options={{ presentation: 'card' }} />
-        </Stack>
+          </Stack>
+        </AudioProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
