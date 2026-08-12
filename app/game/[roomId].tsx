@@ -27,6 +27,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OkeyTable } from '../../src/components/okey-table';
+import type { SeatDiscard } from '../../src/components/okey-table';
 import { TileRack } from '../../src/components/tile-rack';
 import { useAppTheme } from '../../src/hooks/use-app-theme';
 import { decodeOfflineMatch, encodeOfflineMatch, offlineMatchIdentity } from '../../src/services/offline-match';
@@ -110,6 +111,29 @@ export default function GameScreen() {
     () => variant === '101' && game.phase === 'awaiting_discard' && game.turnIndex === 0 ? findTableExtension(game, 'p0') : undefined,
     [game, variant],
   );
+  const latestDiscards = useMemo<readonly SeatDiscard[]>(() => {
+    const byPlayer = new Map<string, (typeof game.discardHistory)[number]>();
+    for (const record of game.discardHistory) {
+      if (record.pickedBy === undefined) byPlayer.set(record.playerId, record);
+    }
+    const top = game.discardHistory.at(-1);
+    const currentPlayer = game.players[0];
+    const canTakeTop = game.phase === 'awaiting_draw'
+      && game.turnIndex === 0
+      && top?.pickedBy === undefined
+      && (variant === 'classic' || currentPlayer?.opened === true);
+    return [...byPlayer.values()].map((record) => ({
+      playerId: record.playerId,
+      tile: record.tile,
+      actionable: canTakeTop && record.sequence === top?.sequence,
+      accessibilityLabel: t('a11y.lastDiscard', {
+        player: playerNames[game.players.findIndex((player) => player.id === record.playerId)] ?? record.playerId,
+        tile: record.tile.kind === 'false_joker'
+          ? t('a11y.falseJoker')
+          : t('a11y.tile', { color: t(`color.${record.tile.color ?? 'black'}`), number: record.tile.number }),
+      }),
+    }));
+  }, [game, playerNames, t, variant]);
 
   useEffect(() => {
     const request = Symbol(persistenceKey);
@@ -181,6 +205,20 @@ export default function GameScreen() {
         : { type: 'finish' as const, discardTileId: selectedId, melds: selectedFinishMelds, commandId, playerId: 'p0', expectedSequence: game.sequence };
       setGame(applyCommand(game, command).state);
       setSelectedId(undefined);
+      setNotice('');
+    } catch (error) {
+      setNotice(error instanceof GameRuleError ? error.message : String(error));
+    }
+  };
+
+  const takeLatestDiscard = () => {
+    try {
+      setGame((current) => applyCommand(current, {
+        type: 'draw_discard',
+        commandId: `user-draw-discard-${commandIndex.current++}`,
+        playerId: 'p0',
+        expectedSequence: current.sequence,
+      }).state);
       setNotice('');
     } catch (error) {
       setNotice(error instanceof GameRuleError ? error.message : String(error));
@@ -270,8 +308,11 @@ export default function GameScreen() {
       width={tableWidth}
       height={tableHeight}
       lowPerformance={lowPerformance}
+      reducedMotion={reducedMotion}
       playerNames={playerNames}
       wallLabel={t('game.wallLabel')}
+      latestDiscards={latestDiscards}
+      onDiscardPress={takeLatestDiscard}
     />
   );
 

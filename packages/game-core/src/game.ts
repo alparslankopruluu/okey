@@ -5,6 +5,7 @@ import { createTileSet, isJoker } from './tiles';
 import {
   GameRuleError,
   type CommandResult,
+  type DiscardRecord,
   type GameCommand,
   type GameEvent,
   type GameState,
@@ -58,7 +59,7 @@ export function createGame(options: {
   if (indicatorTile === undefined) throw new Error('Tile set has no indicator candidate');
   const indicator = ensureNormalIndicator(indicatorTile);
   const baseRackSize = options.variant === 'classic' ? 14 : 21;
-  const players: PlayerState[] = options.playerIds.map((id) => ({ id, rack: [], opened: false, roundScore: 0 }));
+  const players: PlayerState[] = options.playerIds.map((id) => ({ id, rack: [], opened: false, roundScore: 0, penalties: 0 }));
   for (let round = 0; round < baseRackSize; round += 1) {
     for (const player of players) {
       const tile = deck.shift();
@@ -83,7 +84,7 @@ export function createGame(options: {
     discards: [],
     discardHistory: [],
     tableMelds: [],
-    turnContext: { layoffCountByMeldId: {} },
+    turnContext: { layoffCountByMeldId: {}, openingMeldIds: [] },
     players,
     rules: { ...DEFAULT_RULES, ...options.rules },
     processedCommandIds: [],
@@ -95,7 +96,7 @@ function addPenalty(player: PlayerState, amount: number): PlayerState {
   return { ...player, penalties: (player.penalties ?? 0) + amount };
 }
 
-function markDiscardPicked(state: GameState, playerId: string): readonly import('./types').DiscardRecord[] {
+function markDiscardPicked(state: GameState, playerId: string): readonly DiscardRecord[] {
   const last = state.discardHistory.at(-1);
   if (last === undefined) return state.discardHistory;
   return [...state.discardHistory.slice(0, -1), { ...last, pickedBy: playerId }];
@@ -223,14 +224,8 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     if (state.variant !== '101') throw new GameRuleError('opening_not_classic', 'Classic Okey has no table opening command');
     if (state.phase !== 'awaiting_discard') throw new GameRuleError('opening_not_allowed', 'Draw before opening melds');
     if (player.opened) throw new GameRuleError('already_opened', 'Player has already opened');
-    let result: ReturnType<typeof validateMeldCollection>;
-    try {
-      result = validateMeldCollection(command.melds, player.rack, state.indicator);
-    } catch (error) {
-      // Malformed/stale commands are rejected. Valid owned tiles that merely fail the
-      // 101 opening policy consume the turn and incur the documented rule penalty.
-      throw error;
-    }
+    // Malformed/stale commands fail before policy penalties are considered.
+    const result = validateMeldCollection(command.melds, player.rack, state.indicator);
     const pairsOpening = command.melds.every((meld) => meld.kind === 'pair');
     if (!pairsOpening && command.melds.some((meld) => meld.kind === 'pair')) {
       return penalizeFailedOpening(state, command, player, events);
@@ -246,18 +241,49 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     const nextRack = player.rack.filter((tile) => !used.has(tile.id));
     if (nextRack.length < 1) throw new GameRuleError('discard_required', 'Opening must leave one tile to discard');
     const openedTableMelds = tableMeldsFrom(state, player, command.melds, player.rack, 'open');
+    const openingMeldIds = openedTableMelds.map((meld) => meld.id);
     const nextPlayer = { ...player, rack: nextRack, opened: true, openingMode: pairsOpening ? 'pairs' as const : 'melds' as const };
     events.push({
       type: 'melds_opened',
       playerId: player.id,
       melds: command.melds,
-      tableMeldIds: openedTableMelds.map((meld) => meld.id),
+      tableMeldIds: openingMeldIds,
       points: result.points,
     });
     return {
       state: withCommand(state, command, {
         players: replacePlayer(state, nextPlayer),
         tableMelds: [...state.tableMelds, ...openedTableMelds],
+        turnContext: { ...state.turnContext, openingMeldIds },
+      }),
+      events,
+      duplicate: false,
+    };
+  }
+
+  if (command.type === 'take_back_opening') {
+    if (state.variant !== '101' || !player.opened || state.turnContext.openingMeldIds.length === 0) {
+      throw new GameRuleError('opening_take_back_not_allowed', 'There is no opening from this turn to take back');
+    }
+    const openingIds = new Set(state.turnContext.openingMeldIds);
+    const openingMelds = state.tableMelds.filter((meld) => openingIds.has(meld.id) && meld.ownerId === player.id);
+    if (openingMelds.length !== openingIds.size) throw new GameRuleError('opening_take_back_stale', 'Opening melds changed before take-back');
+    const returnedTiles = openingMelds.flatMap((meld) => meld.tiles);
+    const { openingMode: _openingMode, ...penalizedPlayer } = addPenalty(player, 101);
+    const nextPlayer: PlayerState = {
+      ...penalizedPlayer,
+      rack: [...player.rack, ...returnedTiles],
+      opened: false,
+    };
+    events.push(
+      { type: 'opening_taken_back', playerId: player.id, tileIds: returnedTiles.map((tile) => tile.id), penalty: 101 },
+      { type: 'penalty_applied', playerId: player.id, points: 101, reason: 'opening_taken_back' },
+    );
+    return {
+      state: withCommand(state, command, {
+        players: replacePlayer(state, nextPlayer),
+        tableMelds: state.tableMelds.filter((meld) => !openingIds.has(meld.id)),
+        turnContext: { ...state.turnContext, openingMeldIds: [] },
       }),
       events,
       duplicate: false,
@@ -294,7 +320,7 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
       state: withCommand(state, command, {
         players: replacePlayer(state, { ...player, rack: nextRack }),
         tableMelds,
-        turnContext: { layoffCountByMeldId: { ...state.turnContext.layoffCountByMeldId, [tableMeld.id]: priorLayoffs + command.tileIds.length } },
+        turnContext: { ...state.turnContext, layoffCountByMeldId: { ...state.turnContext.layoffCountByMeldId, [tableMeld.id]: priorLayoffs + command.tileIds.length } },
       }),
       events,
       duplicate: false,
@@ -342,7 +368,7 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
         phase: 'round_finished',
         players,
         discards: [...state.discards, discard],
-        discardHistory: [...state.discardHistory, { tileId: discard.id, playerId: player.id, sequence: state.sequence + 1 }],
+        discardHistory: [...state.discardHistory, { tile: discard, playerId: player.id, sequence: state.sequence + 1 }],
         tableMelds: [...state.tableMelds, ...finishTableMelds],
         winnerId: player.id,
         roundEndReason: 'finish',
@@ -366,7 +392,7 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
         phase: 'round_finished',
         players: withRoundScores(playersAfterDiscard, settlement),
         discards: [...state.discards, discard],
-        discardHistory: [...state.discardHistory, { tileId: discard.id, playerId: player.id, sequence: state.sequence + 1 }],
+        discardHistory: [...state.discardHistory, { tile: discard, playerId: player.id, sequence: state.sequence + 1 }],
         roundEndReason: 'wall_exhausted',
         settlement,
       }),
@@ -375,16 +401,18 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     };
   }
   const nextTurn = (state.turnIndex + 1) % state.players.length;
-  const penalizedPlayer = shouldPenalizePlayableDiscard(state, player, discard) ? addPenalty(player, 101) : player;
+  const playableDiscardPenalty = shouldPenalizePlayableDiscard(state, player, discard);
+  const penalizedPlayer = playableDiscardPenalty ? addPenalty(player, 101) : player;
+  if (playableDiscardPenalty) events.push({ type: 'penalty_applied', playerId: player.id, points: 101, reason: 'playable_discard' });
   events.push({ type: 'tile_discarded', playerId: player.id, tile: discard }, { type: 'turn_advanced', turnIndex: nextTurn });
   return {
     state: withCommand(state, command, {
       phase: 'awaiting_draw',
       players: replacePlayer(state, { ...penalizedPlayer, rack: remainingRack }),
       discards: [...state.discards, discard],
-      discardHistory: [...state.discardHistory, { tileId: discard.id, playerId: player.id, sequence: state.sequence + 1 }],
+      discardHistory: [...state.discardHistory, { tile: discard, playerId: player.id, sequence: state.sequence + 1 }],
       turnIndex: nextTurn,
-      turnContext: { layoffCountByMeldId: {} },
+      turnContext: { layoffCountByMeldId: {}, openingMeldIds: [] },
     }),
     events,
     duplicate: false,
@@ -397,14 +425,10 @@ function penalizeFailedOpening(
   player: PlayerState,
   events: GameEvent[],
 ): CommandResult {
-  const nextTurn = (state.turnIndex + 1) % state.players.length;
-  events.push({ type: 'turn_advanced', turnIndex: nextTurn });
+  events.push({ type: 'penalty_applied', playerId: player.id, points: 101, reason: 'invalid_opening' });
   return {
     state: withCommand(state, command, {
-      phase: 'awaiting_draw',
       players: replacePlayer(state, addPenalty(player, 101)),
-      turnIndex: nextTurn,
-      turnContext: { layoffCountByMeldId: {} },
     }),
     events,
     duplicate: false,

@@ -105,6 +105,7 @@
   "a11y.rack": "İki raflı taş ıstakası",
   "a11y.tile": "{{color}} {{number}} taşı",
   "a11y.falseJoker": "Sahte okey taşı",
+  "a11y.lastDiscard": "{{player}} oyuncusunun son atışı: {{tile}}",
   "color.red": "kırmızı",
   "color.blue": "mavi",
   "color.black": "siyah",

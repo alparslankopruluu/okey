@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { playDeterministicBotRound, playDeterministicBotTurn } from './bot';
 import { applyCommand, createGame } from './game';
-import { createMatch, createMatchRound, recordMatchRound } from './match';
+import { createMatch, createMatchRound, recordMatchRound, settleMatchEconomy } from './match';
 import { validateMeld, validateMeldCollection } from './melds';
 import { replay } from './replay';
 import { rackPenaltyScore101, settleRound } from './scoring';
@@ -120,10 +120,10 @@ describe('deterministic state machine', () => {
     const tile = game.players[0]?.rack[0];
     if (tile === undefined) throw new Error('Expected a tile');
     const discarded = applyCommand(game, { type: 'discard', commandId: 'discard', playerId: 'a', expectedSequence: 0, tileId: tile.id }).state;
-    expect(discarded.discardHistory).toEqual([{ tileId: tile.id, playerId: 'a', sequence: 1 }]);
+    expect(discarded.discardHistory).toEqual([{ tile, playerId: 'a', sequence: 1 }]);
     const picked = applyCommand(discarded, { type: 'draw_discard', commandId: 'pick', playerId: 'b', expectedSequence: 1 }).state;
     expect(picked.discards).toHaveLength(0);
-    expect(picked.discardHistory.at(-1)).toMatchObject({ tileId: tile.id, playerId: 'a', pickedBy: 'b' });
+    expect(picked.discardHistory.at(-1)).toMatchObject({ tile, playerId: 'a', pickedBy: 'b' });
   });
 });
 
@@ -253,7 +253,7 @@ describe('legal round finish', () => {
 });
 
 describe('101 opening', () => {
-  it('penalizes a valid but low-point opening and advances the turn', () => {
+  it('penalizes a valid but low-point opening while preserving the required discard step', () => {
     const game = createGame({ gameId: '101', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 2 });
     const rack = [tileByValue('blue', 1), tileByValue('blue', 2), tileByValue('blue', 3)];
     const player = game.players[0];
@@ -263,8 +263,9 @@ describe('101 opening', () => {
     const meld: Meld = { kind: 'sequence', tileIds: rack.map((tile) => tile.id) };
     const result = applyCommand(state, { type: 'open_melds', commandId: 'open', playerId: 'a', expectedSequence: 0, melds: [meld] });
     expect(result.state.players[0]?.penalties).toBe(101);
-    expect(result.state.turnIndex).toBe(1);
-    expect(result.state.phase).toBe('awaiting_draw');
+    expect(result.state.turnIndex).toBe(0);
+    expect(result.state.phase).toBe('awaiting_discard');
+    expect(result.state.players[0]?.rack).toEqual(rack);
   });
 
   it('permits the previous discard in Classic but requires an opened 101 player', () => {
@@ -317,6 +318,24 @@ describe('101 opening', () => {
     expect(finished.settlement?.entries.map((entry) => entry.delta)).toEqual([-101, 202, 202, 202]);
   });
 
+  it('returns a same-turn opening to the rack and applies exactly one +101 penalty', () => {
+    const groups = [sequence('blue', [10, 11, 12, 13]), sequence('black', [10, 11, 12, 13]), sequence('yellow', [4, 5, 6])];
+    const discard = tileByValue('yellow', 1);
+    const rack = [...groups.flat(), discard];
+    const game = createGame({ gameId: '101-take-back', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 7 });
+    const player = game.players[0];
+    if (player === undefined) throw new Error('Expected first player');
+    const state = { ...game, indicator, players: [{ ...player, rack }, ...game.players.slice(1)] };
+    const melds: Meld[] = groups.map((tiles) => ({ kind: 'sequence', tileIds: tiles.map((tile) => tile.id) }));
+    const opened = applyCommand(state, { type: 'open_melds', commandId: 'open-back', playerId: 'a', expectedSequence: 0, melds }).state;
+    const returned = applyCommand(opened, { type: 'take_back_opening', commandId: 'take-back', playerId: 'a', expectedSequence: 1 });
+    expect(returned.state.players[0]).toMatchObject({ opened: false, penalties: 101 });
+    expect(returned.state.players[0]?.rack.map((tile) => tile.id).sort()).toEqual(rack.map((tile) => tile.id).sort());
+    expect(returned.state.tableMelds).toHaveLength(0);
+    expect(returned.events).toContainEqual({ type: 'penalty_applied', playerId: 'a', points: 101, reason: 'opening_taken_back' });
+    expect(returned.state.phase).toBe('awaiting_discard');
+  });
+
   it('finds a deterministic legal opening selection and rejects a layoff that consumes the required discard', () => {
     const rack = [
       ...sequence('blue', [10, 11, 12, 13]),
@@ -361,6 +380,24 @@ describe('match state', () => {
     const complete = recordMatchRound(afterOne, settlement);
     expect(complete.winnerIds).toEqual(['a', 'b']);
     expect(complete.config).toMatchObject({ assistanceMode: 'unassisted', economyMode: 'mock_stake_100' });
+  });
+
+  it('settles mock stakes with deterministic 300/100 payouts and refunds when nobody opened', () => {
+    const base = createMatch({ gameId: 'stake', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 9, config: { economyMode: 'mock_stake_100' } });
+    const settlement = {
+      profile: '101-fixed-open-v1' as const,
+      reason: 'wall_exhausted' as const,
+      entries: [
+        { playerId: 'a', delta: 0, deadwood: 5, opened: true, winner: true },
+        { playerId: 'b', delta: 0, deadwood: 10, opened: true, winner: false },
+        { playerId: 'c', delta: 0, deadwood: 20, opened: false, winner: false },
+        { playerId: 'd', delta: 0, deadwood: 30, opened: false, winner: false },
+      ],
+    };
+    const complete = recordMatchRound(base, settlement);
+    expect(settleMatchEconomy(complete).entries.map((entry) => entry.payout)).toEqual([300, 100, 0, 0]);
+    const noneOpened = recordMatchRound(base, { ...settlement, entries: settlement.entries.map((entry) => ({ ...entry, opened: false })) });
+    expect(settleMatchEconomy(noneOpened)).toMatchObject({ refunded: true, entries: [{ payout: 100 }, { payout: 100 }, { payout: 100 }, { payout: 100 }] });
   });
 });
 

@@ -4,6 +4,7 @@ import {
   type GamePhase,
   type GameState,
   type GameVariant,
+  type DiscardRecord,
   type PlayerState,
   type RoundEndReason,
   type RoundSettlement,
@@ -13,7 +14,7 @@ import {
   type TileValue,
 } from '@luma/game-core';
 
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 const PHASES: readonly GamePhase[] = ['awaiting_draw', 'awaiting_discard', 'round_finished'];
 const COLORS = new Set(['red', 'blue', 'black', 'yellow']);
 
@@ -64,7 +65,18 @@ function isPlayer(value: unknown): value is PlayerState {
     && value.rack.every(isTile)
     && typeof value.opened === 'boolean'
     && (value.openingMode === undefined || value.openingMode === 'melds' || value.openingMode === 'pairs')
-    && typeof value.roundScore === 'number';
+    && typeof value.roundScore === 'number'
+    && (value.penalties === undefined || (typeof value.penalties === 'number' && Number.isSafeInteger(value.penalties) && value.penalties >= 0));
+}
+
+function isDiscardRecord(value: unknown): value is DiscardRecord {
+  return isRecord(value)
+    && isTile(value.tile)
+    && typeof value.playerId === 'string'
+    && typeof value.sequence === 'number'
+    && Number.isSafeInteger(value.sequence)
+    && value.sequence > 0
+    && (value.pickedBy === undefined || typeof value.pickedBy === 'string');
 }
 
 function isTableMeld(value: unknown): value is TableMeld {
@@ -94,7 +106,8 @@ function isSettlement(value: unknown, players: readonly PlayerState[], reason: R
     && typeof entry.delta === 'number'
     && typeof entry.deadwood === 'number'
     && typeof entry.opened === 'boolean'
-    && typeof entry.winner === 'boolean');
+    && typeof entry.winner === 'boolean'
+    && (entry.penalties === undefined || (typeof entry.penalties === 'number' && entry.penalties >= 0)));
 }
 
 function isTileValue(value: unknown): value is TileValue {
@@ -121,12 +134,16 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
     || typeof value.turnIndex !== 'number'
     || !isUnknownArray(value.wall)
     || !isUnknownArray(value.discards)
+    || !isUnknownArray(value.discardHistory)
     || !isUnknownArray(value.tableMelds)
     || !isUnknownArray(value.players)
     || value.players.length !== 4
     || !isTile(value.indicatorTile)
     || !isTileValue(value.indicator)
     || !isRuleConfig(value.rules)
+    || !isRecord(value.turnContext)
+    || !isRecord(value.turnContext.layoffCountByMeldId)
+    || !isUnknownArray(value.turnContext.openingMeldIds)
     || !isUnknownArray(value.processedCommandIds)
     || !isStringRecord(value.processedCommandFingerprints)) return false;
 
@@ -134,13 +151,19 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
   const wall = value.wall;
   const discards = value.discards;
   const tableMelds = value.tableMelds;
+  const discardHistory = value.discardHistory;
   const commandIds = value.processedCommandIds;
   const commandFingerprints = value.processedCommandFingerprints;
 
   if (!Number.isInteger(value.dealerIndex) || value.dealerIndex < 0 || value.dealerIndex >= players.length
     || !Number.isInteger(value.turnIndex) || value.turnIndex < 0 || value.turnIndex >= players.length) return false;
 
-  if (!players.every(isPlayer) || !wall.every(isTile) || !discards.every(isTile) || !tableMelds.every(isTableMeld)) return false;
+  if (!players.every(isPlayer) || !wall.every(isTile) || !discards.every(isTile) || !discardHistory.every(isDiscardRecord) || !tableMelds.every(isTableMeld)) return false;
+  const playerIds = new Set(players.map((player) => player.id));
+  if (discardHistory.some((record) => !playerIds.has(record.playerId)
+    || (record.pickedBy !== undefined && !playerIds.has(record.pickedBy)))) return false;
+  if (!Object.values(value.turnContext.layoffCountByMeldId).every((count) => typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 && count <= 2)) return false;
+  if (!value.turnContext.openingMeldIds.every((id) => typeof id === 'string' && tableMelds.some((meld) => meld.id === id))) return false;
   if (tableMelds.some((meld) => !players.some((player) => player.id === meld.ownerId))) return false;
   if (identity.variant === 'classic' && tableMelds.length > 0) return false;
   if (new Set(tableMelds.map((meld) => meld.id)).size !== tableMelds.length) return false;
@@ -190,12 +213,35 @@ export function decodeOfflineMatch(serialized: string, identity: MatchIdentity):
   try {
     const parsed: unknown = JSON.parse(serialized);
     let candidate = isRecord(parsed) && parsed.version === STORAGE_VERSION ? parsed.game : parsed;
+    if (isRecord(parsed) && parsed.version === 2 && isRecord(parsed.game)) {
+      const legacy = parsed.game;
+      const discards = isUnknownArray(legacy.discards) ? legacy.discards.filter(isTile) : [];
+      const players = isUnknownArray(legacy.players) ? legacy.players : [];
+      const lastOwnerIndex = typeof legacy.turnIndex === 'number' && players.length > 0
+        ? (legacy.turnIndex - 1 + players.length) % players.length
+        : -1;
+      const lastOwner = players[lastOwnerIndex];
+      candidate = {
+        ...legacy,
+        players: players.map((player) => isRecord(player) ? { ...player, penalties: 0 } : player),
+        discardHistory: discards.map((tile, index) => ({
+          tile,
+          playerId: index === discards.length - 1 && isRecord(lastOwner) && typeof lastOwner.id === 'string' ? lastOwner.id : 'p0',
+          sequence: Math.max(1, index + 1),
+        })),
+        turnContext: { layoffCountByMeldId: {}, openingMeldIds: [] },
+      };
+    }
     if (isRecord(parsed) && parsed.version === 1 && isRecord(parsed.game)) {
       const legacy = parsed.game;
       const migrated: Record<string, unknown> = {
         ...legacy,
         tableMelds: [],
-        players: legacy.players,
+        discardHistory: [],
+        turnContext: { layoffCountByMeldId: {}, openingMeldIds: [] },
+        players: isUnknownArray(legacy.players)
+          ? legacy.players.map((player) => isRecord(player) ? { ...player, penalties: 0 } : player)
+          : legacy.players,
       };
       if (migrated.phase === 'round_finished' && migrated.roundEndReason === 'wall_exhausted') {
         const state = migrated as unknown as GameState;

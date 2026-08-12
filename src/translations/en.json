@@ -105,6 +105,7 @@
   "a11y.rack": "Two-row tile rack",
   "a11y.tile": "{{color}} {{number}} tile",
   "a11y.falseJoker": "False joker tile",
+  "a11y.lastDiscard": "{{player}}'s latest discard: {{tile}}",
   "color.red": "red",
   "color.blue": "blue",
   "color.black": "black",

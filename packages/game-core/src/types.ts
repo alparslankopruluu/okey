@@ -64,7 +64,8 @@ export interface PlayerState {
 
 /** Historical ownership metadata. The tile itself remains only in `discards`. */
 export interface DiscardRecord {
-  readonly tileId: string;
+  /** Immutable tile snapshot keeps replay/persistence/UI provenance self-contained. */
+  readonly tile: Tile;
   readonly playerId: string;
   readonly sequence: number;
   readonly pickedBy?: string;
@@ -72,6 +73,7 @@ export interface DiscardRecord {
 
 export interface TurnContext {
   readonly layoffCountByMeldId: Readonly<Record<string, number>>;
+  readonly openingMeldIds: readonly string[];
 }
 
 export interface MatchConfig {
@@ -98,6 +100,20 @@ export interface MatchState {
   readonly lastSuccessfulSeriesOpeningPoints?: number;
   readonly lastSuccessfulPairsOpeningCount?: number;
   readonly winnerIds: readonly string[];
+}
+
+export interface MatchEconomyEntry {
+  readonly playerId: string;
+  readonly stake: number;
+  readonly payout: number;
+  readonly net: number;
+  readonly eligible: boolean;
+}
+
+export interface MatchEconomySettlement {
+  readonly mode: MatchConfig['economyMode'];
+  readonly refunded: boolean;
+  readonly entries: readonly MatchEconomyEntry[];
 }
 
 export interface RuleConfig {
@@ -148,6 +164,7 @@ export type GameCommand =
   | (CommandBase & { readonly type: 'draw_discard' })
   | (CommandBase & { readonly type: 'discard'; readonly tileId: string })
   | (CommandBase & { readonly type: 'open_melds'; readonly melds: readonly Meld[] })
+  | (CommandBase & { readonly type: 'take_back_opening' })
   | (CommandBase & { readonly type: 'extend_meld'; readonly tableMeldId: string; readonly tileIds: readonly string[] })
   | (CommandBase & { readonly type: 'finish'; readonly discardTileId: string; readonly melds: readonly Meld[] });
 
@@ -155,6 +172,8 @@ export type GameEvent =
   | { readonly type: 'tile_drawn'; readonly playerId: string; readonly tile: Tile; readonly source: 'wall' | 'discard' }
   | { readonly type: 'tile_discarded'; readonly playerId: string; readonly tile: Tile }
   | { readonly type: 'melds_opened'; readonly playerId: string; readonly melds: readonly Meld[]; readonly tableMeldIds: readonly string[]; readonly points: number }
+  | { readonly type: 'opening_taken_back'; readonly playerId: string; readonly tileIds: readonly string[]; readonly penalty: 101 }
+  | { readonly type: 'penalty_applied'; readonly playerId: string; readonly points: 101; readonly reason: 'invalid_opening' | 'opening_taken_back' | 'playable_discard' }
   | { readonly type: 'meld_extended'; readonly playerId: string; readonly tableMeldId: string; readonly tileIds: readonly string[] }
   | { readonly type: 'turn_advanced'; readonly turnIndex: number }
   | { readonly type: 'round_finished'; readonly reason: 'finish'; readonly playerId: string; readonly discard: Tile; readonly settlement: RoundSettlement }

@@ -37,15 +37,34 @@ describe('offline match persistence', () => {
     expect(decodeOfflineMatch(encodeOfflineMatch(completed), identity101)).toEqual(completed);
   });
 
-  it('migrates an unopened active v1 snapshot by adding an empty table without changing the deal', () => {
-    const { tableMelds: _tableMelds, ...legacyGame } = game;
+  it('migrates an unopened active v1 snapshot by adding safe v3 defaults without changing the deal', () => {
+    const { tableMelds: _tableMelds, discardHistory: _discardHistory, turnContext: _turnContext, ...legacyGame } = game;
     expect(decodeOfflineMatch(JSON.stringify({ version: 1, game: legacyGame }), identity)).toEqual(game);
   });
 
   it('fails closed for a legacy opened snapshot whose opening mode cannot be recovered', () => {
-    const { tableMelds: _tableMelds, ...legacyGame } = game;
+    const { tableMelds: _tableMelds, discardHistory: _discardHistory, turnContext: _turnContext, ...legacyGame } = game;
     const players = legacyGame.players.map((player, index) => index === 0 ? { ...player, opened: true } : player);
     expect(decodeOfflineMatch(JSON.stringify({ version: 1, game: { ...legacyGame, players } }), identity)).toBeUndefined();
+  });
+
+  it('migrates a v2 snapshot with discard ownership and penalty defaults', () => {
+    const tile = game.players[0]?.rack[0];
+    if (tile === undefined) throw new Error('Expected tile');
+    const legacyGame = {
+      ...game,
+      players: game.players.map(({ penalties: _penalties, ...player }) => ({
+        ...player,
+        rack: player.rack.filter((candidate) => candidate.id !== tile.id),
+      })),
+      discards: [tile],
+      turnIndex: 1,
+      phase: 'awaiting_draw',
+    };
+    const { discardHistory: _discardHistory, turnContext: _turnContext, ...v2 } = legacyGame;
+    const restored = decodeOfflineMatch(JSON.stringify({ version: 2, game: v2 }), identity);
+    expect(restored?.discardHistory).toEqual([{ tile, playerId: 'p0', sequence: 1 }]);
+    expect(restored?.players.every((player) => player.penalties === 0)).toBe(true);
   });
 
   it('rejects a completed snapshot whose settlement is missing or inconsistent', () => {

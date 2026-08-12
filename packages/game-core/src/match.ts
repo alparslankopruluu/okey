@@ -1,5 +1,5 @@
 import { createGame, DEFAULT_RULES } from './game';
-import type { GameState, GameVariant, MatchConfig, MatchRoundSummary, MatchState, RoundSettlement } from './types';
+import type { GameState, GameVariant, MatchConfig, MatchEconomySettlement, MatchRoundSummary, MatchState, RoundSettlement } from './types';
 
 export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   openingThresholdMode: 'fixed',
@@ -27,7 +27,7 @@ export function createMatch(options: {
     variant: options.variant,
     playerIds: options.playerIds,
     seed: options.seed,
-    config: config as MatchConfig,
+    config,
     completedRounds: [],
     penaltiesByPlayerId: Object.fromEntries(options.playerIds.map((id) => [id, 0])),
     winnerIds: [],
@@ -92,4 +92,51 @@ export function recordMatchRound(
     }),
     winnerIds: minimum === undefined ? [] : match.playerIds.filter((id) => penaltiesByPlayerId[id] === minimum),
   };
+}
+
+/** Pure mock-stake settlement. These chips have no transfer or real-world value. */
+export function settleMatchEconomy(match: MatchState): MatchEconomySettlement {
+  if (match.completedRounds.length !== match.config.roundCount) throw new Error('Match must be complete before economy settlement');
+  if (match.config.economyMode === 'casual') {
+    return { mode: 'casual', refunded: false, entries: match.playerIds.map((playerId) => ({ playerId, stake: 0, payout: 0, net: 0, eligible: true })) };
+  }
+  const stake = 100;
+  const eligible = match.playerIds.filter((playerId) => match.completedRounds.some((round) => round.settlement.entries.some((entry) => entry.playerId === playerId && entry.opened)));
+  if (eligible.length === 0) {
+    return { mode: 'mock_stake_100', refunded: true, entries: match.playerIds.map((playerId) => ({ playerId, stake, payout: stake, net: 0, eligible: false })) };
+  }
+  const ranked = [...eligible].sort((left, right) => (match.penaltiesByPlayerId[left] ?? 0) - (match.penaltiesByPlayerId[right] ?? 0) || left.localeCompare(right, 'en'));
+  const payouts = new Map<string, number>();
+  if (ranked.length === 1) {
+    payouts.set(ranked[0] ?? '', 400);
+  } else {
+    const firstScore = match.penaltiesByPlayerId[ranked[0] ?? ''] ?? 0;
+    const firstTie = ranked.filter((id) => (match.penaltiesByPlayerId[id] ?? 0) === firstScore);
+    if (firstTie.length > 1) {
+      distributePool(payouts, firstTie, 400);
+    } else {
+      payouts.set(ranked[0] ?? '', 300);
+      const secondScore = match.penaltiesByPlayerId[ranked[1] ?? ''] ?? 0;
+      const secondTie = ranked.slice(1).filter((id) => (match.penaltiesByPlayerId[id] ?? 0) === secondScore);
+      distributePool(payouts, secondTie, 100);
+    }
+  }
+  return {
+    mode: 'mock_stake_100',
+    refunded: false,
+    entries: match.playerIds.map((playerId) => {
+      const payout = payouts.get(playerId) ?? 0;
+      return { playerId, stake, payout, net: payout - stake, eligible: eligible.includes(playerId) };
+    }),
+  };
+}
+
+function distributePool(payouts: Map<string, number>, playerIds: readonly string[], pool: number): void {
+  const ordered = [...playerIds].sort((left, right) => left.localeCompare(right, 'en'));
+  const base = Math.floor(pool / ordered.length);
+  let remainder = pool - base * ordered.length;
+  for (const playerId of ordered) {
+    payouts.set(playerId, base + (remainder > 0 ? 1 : 0));
+    remainder = Math.max(0, remainder - 1);
+  }
 }
