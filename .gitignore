@@ -19,6 +19,7 @@ worker-configuration.d.ts
 .wrangler/
 .expo/
 functions/lib/
+firebase/functions/lib/
 firestore-debug.log
 firebase-debug.log
 ui-debug.log
