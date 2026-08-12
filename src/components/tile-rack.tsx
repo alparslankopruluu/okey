@@ -1,7 +1,8 @@
 import type { Tile } from '@luma/game-core';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { TileCard } from './tile-card';
+import { images } from '../assets';
 import { palette, radius, space } from '../theme/tokens';
 
 interface TileRackProps {
@@ -51,6 +52,9 @@ export function TileRack({
         start={{ x: 0.18, y: 0 }}
         style={[styles.frame, { width: contentWidth, height: rackHeight }]}
       >
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <Image resizeMode="stretch" source={images.rack} style={styles.rackAsset} />
+        </View>
         <View pointerEvents="none" style={styles.backGlow} />
         {rows.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.shelf}>
@@ -102,6 +106,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: palette.rackHighlight,
     opacity: 0.46,
+  },
+  rackAsset: {
+    width: '100%',
+    height: '100%',
+    opacity: 0.72,
   },
   shelf: { justifyContent: 'flex-end' },
   tileRow: { minHeight: 56, flexDirection: 'row', alignItems: 'flex-end', gap: TILE_GAP, zIndex: 2 },

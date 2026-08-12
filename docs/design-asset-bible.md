@@ -126,3 +126,49 @@ Constraints: no text, no letters, no numbers, no currency symbols, no poker chip
 - Tool/change: ImageMagick; avatar crop 01 was resized proportionally, centered, and padded to an opaque 1024 x 1024 midnight canvas.
 - SHA-256: `4e12abe624cc08698e9c97d821254ae6862f3a5f52fea4dcd99a9d416beeaa26`
 - Purpose: deterministic development-build placeholder only. Store icon art remains a human-reviewed release TODO.
+
+## 2026-08-12 production asset pass
+
+The built-in ChatGPT Images generator received only Luma's owned concept sheets as
+material-language references. Each source render used an explicit empty-background,
+no-text/no-logo/no-currency constraint. Chroma-key removal used the app-factory
+`remove_chroma_key.py` helper with a soft matte and despill; originals remain under
+`assets/concepts/generated/`.
+
+| Asset | Final file | SHA-256 | Selection rationale |
+|---|---|---|---|
+| Empty two-tier rack | `assets/game/racks/luma-rack-v1.png` | `c7c53998e712b9ebc1b050a5b6b4187ed90a8026817ff604607c1296d817b56e` | Uniform wide center, two distinct shelves, quiet midnight/aqua material, no gameplay glyphs |
+| Tea gift · 50 chip | `assets/game/gifts/gift-tea-v1.png` | `e870d0595ef31684fbe4aec72409ce6a0e82de230750903a1c8dc1be8541f99d` | Recognizable Turkish tulip glass, warm but non-monetary |
+| Coffee gift · 100 chip | `assets/game/gifts/gift-coffee-v1.png` | `b084cacd243a8410c59ef25503839b2fdd54c115aca01e7572616d672ceb62a3` | Distinct pearl cup silhouette, compact mobile readability |
+| Chocolate gift · 150 chip | `assets/game/gifts/gift-chocolate-v1.png` | `25367bc28439fc8cc0c601f21030dcf7e11a6dbf61e5d56c5ec4333051e1e6c8` | Three-piece assortment and lilac wrap separate it from other gifts |
+| Rose gift · 250 chip | `assets/game/gifts/gift-rose-v1.png` | `7ee5f9f8388c71f967d197bd59ac8754b83825dbd64667d638937eeae5a9c725` | Strong coral bloom silhouette and Luma-colored stem/leaves |
+| Amber tespih gift · 400 chip | `assets/game/gifts/gift-tespih-v1.png` | `4c854b3098c65c5a11306c428dfb8c438e9712b704a2369041260770bc0feb7a` | Respectful bead-loop presentation, no text or religious marking |
+| Celebration cake · 1,000 chip | `assets/game/gifts/gift-cake-v1.png` | `b00a644646bfb7aa36e956a1b50a354fc40233461a4f7335db68e887df9491ca` | Pearl/lilac/aqua celebration object without casino spectacle |
+
+Shared gift prompt contract: one isolated social-gift medallion, centered and fully
+visible, premium soft-3D clay/satin object with aqua-lilac rim light and pearl
+highlights on a circular midnight pedestal; no text, number, price, logo, currency,
+casino symbol, coin, brand, or extra prop. The individual subject sentence named tea,
+coffee, chocolate, rose, amber tespih, or cake. The rack prompt similarly requested one
+empty, symmetric, wide two-tier soft-touch rack with satin aqua shelf inlays, pearl
+edge, and a center suitable for responsive stretching.
+
+### Avatar crop v2
+
+- Source remains `assets/game/avatar-atlas.png`; characters were not regenerated.
+- `scripts/crop-avatar-medallions.sh` takes twelve equal `300 x 300` squares from the
+  regular 4-by-3 atlas and normalizes them to `512 x 512` with Lanczos filtering.
+- Runtime masking is a generic exact circle. There are no gender- or index-specific
+  offsets. `assets/game/avatars/v2/contact-sheet.png` is review evidence, not a runtime asset.
+- Avatar SHA-256 values, in display order: `02795c8969d2f481687a472bc6bea7389cb217afad81410c4d8b25599a3ec594`,
+  `02b5f1035adc485f59ff8afa9f3e6844ede946c38b4008c9998800eb66ae2eef`,
+  `6c46fe4dc6c7963dbd9e03c3cb9d578f7d8a5f5c3b7958e847ef92a857931843`,
+  `08ec0cf28a733a704a4e03f2e7a28479f1b0fe1dc1a0d8818225a57f7b914a28`,
+  `99c697600bed94a785f71346d385cb3dcbaf218139b6315b1226ab296b6dd2fc`,
+  `f3e7f4f85b9329a87f1efcd431a1feea81356a3fb7c5d67057d3afa9ae71b223`,
+  `0ced4ffbe56ed0caba4dc43e4de13fa6d61651d2753a97171430e5536b0711b9`,
+  `d03736234641b7fcdc15024988ccf9c1059e931000d959416e65ec364cf8b485`,
+  `9b3911b91f8e00e1d201b43e03ea8d80526ece547fad7e7dfce036ee2f83882e`,
+  `4a2b89cb16b2b8ae8fd80ceec298ae49f779d89be2881822aa29b6dd28b90c6e`,
+  `86905d6824bc79000d500f667593c1e7fb33f57e53f57396b4654d6ace548b39`,
+  `45fd47ef3ffcd58953d8fcfea6c5dc95c2c05b51e74893b6c0c2aa3312e5edf1`.
