@@ -13,8 +13,8 @@ export function SettingRow({ title, body, value, onToggle, onPress, action }: { 
       style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}
     >
       <View style={styles.copy}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        {body !== undefined && <Text style={[styles.body, { color: colors.muted }]}>{body}</Text>}
+        <Text maxFontSizeMultiplier={1.8} style={[styles.title, { color: colors.text }]}>{title}</Text>
+        {body !== undefined && <Text maxFontSizeMultiplier={1.8} style={[styles.body, { color: colors.muted }]}>{body}</Text>}
       </View>
       {onToggle !== undefined && value !== undefined ? (
         <Switch value={value} onValueChange={onToggle} trackColor={{ true: palette.aquaDeep }} />

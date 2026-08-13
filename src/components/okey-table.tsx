@@ -44,6 +44,7 @@ interface OkeyTableProps {
   readonly wallDrawEnabled?: boolean;
   readonly onWallDraw?: (() => void) | undefined;
   readonly wallDropDirection?: 'down' | 'right';
+  readonly rackDropActive?: boolean;
 }
 
 interface SeatPosition {
@@ -205,8 +206,8 @@ function DraggableWall({ count, label, enabled, reducedMotion, dropDirection, on
           onPress={onDraw}
           style={styles.wallPressable}
         >
-          <Text style={styles.wallCount}>{count}</Text>
-          <Text style={styles.wallLabel}>{label}</Text>
+          <Text allowFontScaling={false} style={styles.wallCount}>{count}</Text>
+          <Text allowFontScaling={false} style={styles.wallLabel}>{label}</Text>
         </Pressable>
       </Animated.View>
     </GestureDetector>
@@ -230,6 +231,7 @@ export function OkeyTable({
   wallDrawEnabled = false,
   onWallDraw,
   wallDropDirection = 'down',
+  rackDropActive = false,
 }: OkeyTableProps) {
   const { t } = useTranslation();
   const compact = height < 250 || width < 350;
@@ -242,11 +244,16 @@ export function OkeyTable({
   ];
   const discards = latestDiscards ?? fallbackDiscards(state);
   const visibleDiscards = discards.filter((discard) => seatIndexForPlayer(state, discard.playerId) >= 0);
-  const isWinner = state.phase === 'round_finished' && state.winnerId !== undefined;
-  const winnerIndex = state.winnerId === undefined ? -1 : seatIndexForPlayer(state, state.winnerId);
-  const winnerLabel = winnerIndex === 0
-    ? t('game.youWon')
-    : t('game.roundWinner', { name: playerNames[winnerIndex] ?? state.winnerId });
+  const winnerIds = state.settlement?.winnerIds ?? (state.winnerId === undefined ? [] : [state.winnerId]);
+  const winnerNames = winnerIds.map((winnerId) => {
+    const winnerIndex = seatIndexForPlayer(state, winnerId);
+    return winnerIndex === 0 ? t('game.youWon') : playerNames[winnerIndex] ?? winnerId;
+  });
+  const winnerLabel = winnerNames.length === 1
+    ? winnerIds[0] === state.players[0]?.id
+      ? t('game.youWon')
+      : t('game.roundWinner', { name: winnerNames[0] })
+    : t('game.roundWinners', { names: winnerNames.join(', ') });
 
   return (
     <View accessibilityLabel={state.variant === 'classic' ? t('game.classic') : t('game.101')} style={[styles.root, { width, height }]}>
@@ -274,6 +281,11 @@ export function OkeyTable({
         )}
       </Canvas>
       <DraggableWall count={state.wall.length} label={wallLabel} enabled={wallDrawEnabled} reducedMotion={reducedMotion || lowPerformance} dropDirection={wallDropDirection} onDraw={onWallDraw} />
+      {rackDropActive && (
+        <View pointerEvents="none" style={[styles.rackDropTarget, reducedMotion && styles.rackDropTargetReduced]}>
+          <Text style={styles.rackDropLabel}>{t('game.dropToTable')}</Text>
+        </View>
+      )}
       <View style={[styles.indicator, compact && styles.indicatorCompact]} accessible accessibilityLabel={t('a11y.tile', { color: t(`color.${(indicatorTile ?? state.indicatorTile).color ?? 'black'}`), number: (indicatorTile ?? state.indicatorTile).number })}>
         <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><TileFace tile={indicatorTile ?? state.indicatorTile} size={compact ? 20 : 25} /></View>
       </View>
@@ -287,8 +299,8 @@ export function OkeyTable({
           <Pressable accessibilityRole="button" accessibilityLabel={t('a11y.playerProfile', { player: playerNames[index] ?? player.id })} disabled={onSeatPress === undefined} onPress={() => onSeatPress?.(index)}>
           <AvatarMedallion index={index} size={index === 0 ? seatSize + 8 : seatSize} active={state.turnIndex === index} />
           </Pressable>
-          <Text numberOfLines={1} style={[styles.name, state.turnIndex === index && styles.activeName]}>{playerNames[index] ?? player.id}</Text>
-          <Text style={styles.count}>{player.rack.length}</Text>
+          <Text maxFontSizeMultiplier={1.35} numberOfLines={1} adjustsFontSizeToFit style={[styles.name, state.turnIndex === index && styles.activeName]}>{playerNames[index] ?? player.id}</Text>
+          <Text maxFontSizeMultiplier={1.35} style={styles.count}>{player.rack.length}</Text>
           {visibleDiscards
             .filter((discard) => discard.playerId === player.id)
             .map((discard) => (
@@ -302,7 +314,7 @@ export function OkeyTable({
             ))}
         </View>
       ))}
-      {isWinner && <WinnerGlow winnerId={state.winnerId ?? ''} label={winnerLabel} reducedMotion={reducedMotion} lowPerformance={lowPerformance} />}
+      {winnerIds.length > 0 && <WinnerGlow winnerId={winnerIds.join(':')} label={winnerLabel} reducedMotion={reducedMotion} lowPerformance={lowPerformance} />}
       {!lowPerformance && giftEvent !== undefined && <GiftFlight event={giftEvent} width={width} height={height} reducedMotion={reducedMotion} />}
     </View>
   );
@@ -322,6 +334,9 @@ const styles = StyleSheet.create({
     backgroundColor: palette.tileIvory, alignItems: 'center', justifyContent: 'center', shadowColor: palette.black, shadowOpacity: 0.3, shadowRadius: 8,
   },
   actionableWall: { borderWidth: 1, borderColor: palette.aqua, shadowColor: palette.aqua, shadowOpacity: 0.36 },
+  rackDropTarget: { position: 'absolute', left: '31%', right: '31%', bottom: '23%', minHeight: 34, borderRadius: radius.pill, borderWidth: 1, borderColor: palette.aqua, backgroundColor: 'rgba(41,225,214,0.14)', alignItems: 'center', justifyContent: 'center' },
+  rackDropTargetReduced: { backgroundColor: 'rgba(41,225,214,0.22)' },
+  rackDropLabel: { color: palette.pearl, fontSize: 10, fontWeight: '900' },
   wallPressable: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' },
   wallCount: { color: palette.ink, fontSize: 17, fontWeight: '900' },
   wallLabel: { color: palette.mutedLight, fontSize: 8, fontWeight: '800', letterSpacing: 1 },

@@ -51,6 +51,7 @@ Sources: [Pagat Classic Okey](https://www.pagat.com/rummy/okey.html), [Pagat Oke
 - 101 ordinary sets/runs finish: winner `−101`; unopened loser `202`; opened loser remaining face total; pair opener remaining total ×2.
 - Actual-joker finish doubles the applicable winner and opened-player values. Pair-winning and direct-hand finishes use the documented doubled profile; a direct hand plus actual-joker finish is `−404` for the winner and `808` for unopened opponents.
 - An actual joker left in a 101 rack is worth 101 deadwood. On stock exhaustion, players who opened are ranked by remaining penalty total; the lowest total wins and equal totals create joint winners. Unopened players receive the fixed 202 profile. If nobody opened, the mock stake is refunded.
+- Multi-round aggregation consumes each immutable settlement `delta` directly; it never reconstructs a result from deadwood. Accumulated in-round `+101` rule penalties enter the terminal delta exactly once. Classic matches rank the highest cumulative room score, while 101 matches rank the lowest cumulative penalty.
 - The physical false joker is scored as the represented ordinary joker-face number, never as a wild actual joker.
 
 ## Explicit configuration (never hidden)

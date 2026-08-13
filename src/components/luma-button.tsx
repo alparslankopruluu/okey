@@ -42,7 +42,7 @@ export function LumaButton({ label, onPress, icon, variant = 'primary', disabled
       style={[styles.button, { backgroundColor, opacity: disabled ? 0.45 : 1 }, animatedStyle, style]}
     >
       {icon}
-      <Text style={[styles.label, { color: textColor }]}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.5} numberOfLines={2} adjustsFontSizeToFit style={[styles.label, { color: textColor }]}>{label}</Text>
     </AnimatedPressable>
   );
 }

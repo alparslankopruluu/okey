@@ -57,17 +57,35 @@
 - The first native attempt exposed an incompletely extracted local `node_modules` tree
   (missing Skia simulator and Workerd binaries). A lockfile-exact `npm ci` restored both;
   the Worker typecheck and second native build then passed without source-version changes.
-- The 2026-08-13 interaction checkpoint passes 176-key TR/EN parity, zero-warning
-  lint and strict app/core/Worker typecheck. The final run passes 68 root
+- The 2026-08-13 interaction checkpoint passes 178-key TR/EN parity, zero-warning
+  lint and strict app/core/Worker typecheck. The final run passes 74 root
   app/core/service tests, 7 Worker runtime tests, 9 Functions tests and 4 Firestore emulator
   rules tests, including exact 100/500/1,000 mock-room settlement and remount-resistant
   gift cooldown/block enforcement. Expo Doctor passes 20/20.
+- Settlement review proves multi-round totals consume authoritative deltas, accumulated
+  `+101` penalties enter once, Classic mock rooms rank the highest cumulative score, and
+  101 rooms rank the lowest penalty. Settlement receipts reject duplicate/missing players
+  and cross-variant profiles; direct-hand 101 winners remain economy-eligible, while 101
+  wall-exhaustion single/tied winners propagate to localized result and haptic surfaces.
 - A regenerated native iOS Debug build succeeds under Xcode 26.6 and launches on the
   iPhone 16 Pro iOS 18.3 simulator. The same live match was observed in portrait and both
   landscape directions with the Kahvehane rack, white deterministic tile faces, four
   seat-linked last discards, real 101 table melds, all six gift cards, authoritative gift
   balance/cooldown, and readable staged bot turns. The Android Debug development build
   launches on the tablet emulator without the formerly observed unconfigured-Firebase crash.
+- Largest iOS accessibility text was enabled on the iPhone 16 Pro simulator. Screen
+  headings, table status, player names, tile glyphs, rack actions and chat remain inside
+  their surfaces; gameplay tile digits deliberately keep deterministic geometry while
+  their VoiceOver labels remain semantic. See
+  [`ios-largest-text-settings-fixed.png`](../evidence/simulator-2026-08-13/ios-largest-text-settings-fixed.png)
+  and [`ios-largest-text-game-fixed-final.png`](../evidence/simulator-2026-08-13/ios-largest-text-game-fixed-final.png).
+- Android development-build orientation is verified on the Pixel 8 Pro API 31 emulator
+  in portrait and both landscape directions. The warm Kahvehane table, two-shelf walnut
+  rack, ivory deterministic tile faces, four seats, wall/indicator, and draw/discard/chat/
+  voice controls remain visible in each direction. See
+  [`android-phone-portrait-kahvehane.png`](../evidence/simulator-2026-08-13/android-phone-portrait-kahvehane.png),
+  [`android-phone-landscape-left-kahvehane.png`](../evidence/simulator-2026-08-13/android-phone-landscape-left-kahvehane.png), and
+  [`android-phone-landscape-right-kahvehane.png`](../evidence/simulator-2026-08-13/android-phone-landscape-right-kahvehane.png).
 - Current Simulator evidence is recorded in
   [`ios-kahvehane-table-landscape.png`](evidence/simulator-2026-08-13/ios-kahvehane-table-landscape.png),
   [`ios-kahvehane-gift-landscape.png`](evidence/simulator-2026-08-13/ios-kahvehane-gift-landscape.png),
@@ -83,8 +101,9 @@
 
 ## Open gates
 
-- iOS/Android physical-device, Android orientation, large-text, Maestro, and performance
-  profiling remain open. Reduced Motion was enabled in the iOS simulator and a full
+- iOS/Android physical-device, Maestro, interrupted/repeated drag-gesture, and performance
+  profiling remain open. Android orientation and iOS largest-text layout are now simulator/
+  emulator verified. Reduced Motion was enabled in the iOS simulator and a full
   discard → three readable bot turns → wall draw cycle completed with positional motion
   suppressed; the run caught and then verified the fix for a remount-derived command-ID
   collision (wall 45→44, rack 14→15). Native iOS and

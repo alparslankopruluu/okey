@@ -65,7 +65,14 @@ export function recordMatchRound(
 ): MatchState {
   if (match.completedRounds.length >= match.config.roundCount) throw new Error('Match is already complete');
   const known = new Set(match.playerIds);
-  if (settlement.entries.length !== 4 || settlement.entries.some((entry) => !known.has(entry.playerId))) {
+  const settlementPlayerIds = settlement.entries.map((entry) => entry.playerId);
+  const expectedProfile = match.variant === 'classic' ? 'classic-standard-v1' : '101-fixed-open-v1';
+  if (
+    settlement.profile !== expectedProfile
+    || settlement.entries.length !== match.playerIds.length
+    || new Set(settlementPlayerIds).size !== match.playerIds.length
+    || settlementPlayerIds.some((playerId) => !known.has(playerId))
+  ) {
     throw new Error('Settlement does not match this match players');
   }
   const round: MatchRoundSummary = {
@@ -107,11 +114,19 @@ export function settleMatchEconomy(match: MatchState): MatchEconomySettlement {
   if (![100, 500, 1000].includes(stake)) throw new Error('Unsupported mock stake');
   const eligible = match.variant === 'classic'
     ? [...match.playerIds]
-    : match.playerIds.filter((playerId) => match.completedRounds.some((round) => round.settlement.entries.some((entry) => entry.playerId === playerId && entry.opened)));
+    : match.playerIds.filter((playerId) => match.completedRounds.some((round) => (
+      round.settlement.entries.some((entry) => entry.playerId === playerId && entry.opened)
+      || round.settlement.winnerId === playerId
+      || round.settlement.winnerIds?.includes(playerId) === true
+    )));
   if (eligible.length === 0) {
     return { mode: match.config.economyMode, refunded: true, entries: match.playerIds.map((playerId) => ({ playerId, stake, payout: stake, net: 0, eligible: false })) };
   }
-  const ranked = [...eligible].sort((left, right) => (match.penaltiesByPlayerId[left] ?? 0) - (match.penaltiesByPlayerId[right] ?? 0) || left.localeCompare(right, 'en'));
+  const scoreDirection = match.variant === 'classic' ? -1 : 1;
+  const ranked = [...eligible].sort((left, right) => (
+    scoreDirection * ((match.penaltiesByPlayerId[left] ?? 0) - (match.penaltiesByPlayerId[right] ?? 0))
+      || left.localeCompare(right, 'en')
+  ));
   const payouts = new Map<string, number>();
   if (ranked.length === 1) {
     payouts.set(ranked[0] ?? '', stake * 4);

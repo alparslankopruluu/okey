@@ -30,7 +30,7 @@ export function TileFace({ tile, size = 34, highlighted = false, onPress, access
   const contents = (
     <>
       <View style={[styles.glyph, { backgroundColor: color }]} />
-      <Text adjustsFontSizeToFit minimumFontScale={0.7} numberOfLines={1} style={[styles.number, { color, fontSize: Math.max(14, size * 0.54) }]}>
+      <Text allowFontScaling={false} adjustsFontSizeToFit minimumFontScale={0.7} numberOfLines={1} style={[styles.number, { color, fontSize: Math.max(14, size * 0.54) }]}>
         {tile.kind === 'false_joker' ? '✦' : tile.number}
       </Text>
       <View style={[styles.underline, { backgroundColor: color }]} />

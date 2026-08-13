@@ -19,8 +19,8 @@ export function Screen({ children, title, eyebrow, right, scroll = true, content
       {(title !== undefined || eyebrow !== undefined || right !== undefined) && (
         <View style={styles.header}>
           <View style={styles.heading}>
-            {eyebrow !== undefined && <Text style={[styles.eyebrow, { color: colors.muted }]}>{eyebrow}</Text>}
-            {title !== undefined && <Text style={[styles.title, { color: colors.text }]}>{title}</Text>}
+            {eyebrow !== undefined && <Text maxFontSizeMultiplier={1.5} style={[styles.eyebrow, { color: colors.muted }]}>{eyebrow}</Text>}
+            {title !== undefined && <Text maxFontSizeMultiplier={1.5} style={[styles.title, { color: colors.text }]}>{title}</Text>}
           </View>
           {right}
         </View>

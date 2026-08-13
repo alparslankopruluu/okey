@@ -1,10 +1,11 @@
 import type { Tile, TileColor } from '@luma/game-core';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useTranslation } from 'react-i18next';
 import { palette, radius } from '../theme/tokens';
+import { resolveRackGesture, type RackDropDirection } from '../services/table-interaction';
 
 const inkByColor: Record<TileColor, string> = {
   red: '#E85A67',
@@ -19,30 +20,73 @@ interface TileCardProps {
   width: number;
   onPress(): void;
   onMove(delta: number): void;
+  onDiscard?: (() => void) | undefined;
+  discardEnabled?: boolean;
+  discardDirection?: RackDropDirection;
+  interactionEnabled?: boolean;
+  onDragActive?: ((active: boolean) => void) | undefined;
   reducedMotion: boolean;
   theme?: 'luma' | 'kahvehane';
   rowStride?: number;
   rowStep?: number;
 }
 
-export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion, theme = 'luma', rowStride = 0, rowStep = 1 }: TileCardProps) {
+export function TileCard({
+  tile,
+  selected,
+  width,
+  onPress,
+  onMove,
+  onDiscard,
+  discardEnabled = false,
+  discardDirection = 'up',
+  interactionEnabled = true,
+  onDragActive,
+  reducedMotion,
+  theme = 'luma',
+  rowStride = 0,
+  rowStep = 1,
+}: TileCardProps) {
   const { t } = useTranslation();
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const pan = Gesture.Pan()
-    .activeOffsetX([-8, 8])
+    .enabled(interactionEnabled)
+    .minDistance(8)
+    .onTouchesDown(() => {
+      if (onDragActive !== undefined) scheduleOnRN(onDragActive, true);
+    })
+    .onStart(() => {
+      if (onDragActive !== undefined) scheduleOnRN(onDragActive, true);
+    })
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = reducedMotion ? 0 : Math.max(-rowStep, Math.min(rowStep, event.translationY));
     })
     .onEnd((event) => {
-      const columnDelta = Math.round(event.translationX / Math.max(width, 1));
-      const rowDelta = rowStride === 0 ? 0 : Math.round(event.translationY / Math.max(rowStep, 1)) * rowStride;
-      const delta = columnDelta + rowDelta;
-      if (delta !== 0) scheduleOnRN(onMove, delta);
+      const outcome = resolveRackGesture({
+        translationX: event.translationX,
+        translationY: event.translationY,
+        tileWidth: width,
+        rowStride,
+        rowStep,
+        discardEnabled,
+        discardDirection,
+      });
+      if (outcome.kind === 'discard' && onDiscard !== undefined) scheduleOnRN(onDiscard);
+      if (outcome.kind === 'move') scheduleOnRN(onMove, outcome.delta);
+    })
+    .onFinalize(() => {
+      if (onDragActive !== undefined) scheduleOnRN(onDragActive, false);
       translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20, stiffness: 260 });
       translateY.value = reducedMotion ? 0 : withSpring(0, { damping: 20, stiffness: 260 });
     });
+  const tap = Gesture.Tap()
+    .enabled(interactionEnabled)
+    .onEnd((_event, success) => {
+      if (success) scheduleOnRN(onPress);
+    });
+  const gesture = Gesture.Exclusive(pan, tap);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { translateY: selected ? -10 : 0 }],
     zIndex: Math.abs(translateX.value) > 1 ? 20 : selected ? 10 : 1,
@@ -52,13 +96,18 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
   const height = Math.round(Math.max(56, Math.min(72, width * 1.55)));
   const numberSize = Math.round(Math.max(17, Math.min(23, width * 0.57)));
   return (
-    <GestureDetector gesture={pan}>
+    <GestureDetector gesture={gesture}>
       <Animated.View style={[animatedStyle, { width }]}>
-        <Pressable
+        <View
+          accessible
           accessibilityRole="button"
           accessibilityLabel={label}
-          accessibilityState={{ selected }}
-          onPress={onPress}
+          accessibilityState={{ selected, disabled: !interactionEnabled }}
+          onAccessibilityTap={interactionEnabled ? onPress : undefined}
+          accessibilityActions={interactionEnabled ? [{ name: 'activate' }] : undefined}
+          onAccessibilityAction={interactionEnabled ? (event) => {
+            if (event.nativeEvent.actionName === 'activate') onPress();
+          } : undefined}
           style={[
             styles.tile,
             {
@@ -73,6 +122,7 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
           {theme === 'kahvehane' && <View pointerEvents="none" style={styles.patina} />}
           <View style={[styles.glyph, { backgroundColor: tile.kind === 'false_joker' ? palette.lilac : inkByColor[tile.color ?? 'black'] }]} />
           <Text
+            allowFontScaling={false}
             adjustsFontSizeToFit
             minimumFontScale={0.78}
             numberOfLines={1}
@@ -88,7 +138,7 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
             {tile.kind === 'false_joker' ? '✦' : tile.number}
           </Text>
           <View style={[styles.underline, { backgroundColor: tile.kind === 'false_joker' ? palette.lilac : inkByColor[tile.color ?? 'black'] }]} />
-        </Pressable>
+        </View>
       </Animated.View>
     </GestureDetector>
   );

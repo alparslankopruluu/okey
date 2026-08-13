@@ -60,7 +60,8 @@ nine-tile rack in portrait and landscape.
 
 - [x] Lint, typecheck, game-core/Worker/app tests, translation parity, Expo Doctor and local Firebase rules/policy tests pass; dependency audit risk is documented pending upstream-compatible fixes.
 - [x] iOS and Android development builds run on simulator/emulator; iOS portrait/both landscape directions, VoiceOver labels, gifts, bot pacing, rooms, and Kahvehane layout are recorded.
-- [ ] Large text, Android orientation, physical-device performance, and Maestro evidence recorded. Reduced Motion is enabled and a full discard → three bot turns → draw cycle is captured on the iOS simulator.
+- [x] Large text and Android portrait/both-landscape orientation evidence recorded. Reduced Motion is enabled and a full discard → three bot turns → draw cycle is captured on the iOS simulator.
+- [ ] Physical-device performance, interrupted/repeated drag gestures, and Maestro evidence recorded.
 - [ ] Real-device voice and purchase sandbox acceptance completed after human provider setup.
 - [ ] Firebase/Cloudflare/RealtimeKit/RevenueCat dev resources created only after separate approval and verified by readback.
 - [ ] Store metadata/icon/screenshots reflect the real accepted build.

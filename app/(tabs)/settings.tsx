@@ -16,7 +16,7 @@ export default function SettingsScreen() {
   return (
     <Screen title={t('settings.title')}>
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.music')}</Text>
+        <Text maxFontSizeMultiplier={1.5} style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.music')}</Text>
         <SettingRow title={t('settings.music')} body={t('settings.musicBody')} action={<Music2 color={store.musicPlaying ? palette.aquaDeep : colors.muted} />} />
         <View style={styles.row}>
           <LumaButton label={store.musicPlaying ? t('settings.pause') : t('settings.play')} onPress={store.toggleMusic} style={styles.flex} />
@@ -24,24 +24,24 @@ export default function SettingsScreen() {
         </View>
       </View>
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.sound')}</Text>
+        <Text maxFontSizeMultiplier={1.5} style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.sound')}</Text>
         <SettingRow title={t('settings.effects')} body={t('settings.effectsBody')} value={store.effectsEnabled} onToggle={store.toggleEffects} />
         <SettingRow title={t('settings.ambient')} body={t('settings.ambientBody')} value={store.ambientEnabled} onToggle={store.toggleAmbient} />
       </View>
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.theme')}</Text>
+        <Text maxFontSizeMultiplier={1.5} style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.theme')}</Text>
         <SettingRow title={t('settings.theme')} body={store.appearance === 'dark' ? 'Midnight' : 'Pearl'} value={store.appearance === 'dark'} onToggle={store.toggleAppearance} />
-        <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.tableTheme')}</Text>
+        <Text maxFontSizeMultiplier={1.5} style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.tableTheme')}</Text>
         <View style={styles.row}>
           <LumaButton label={t('settings.tableThemeLuma')} variant={store.tableTheme === 'luma' ? 'primary' : 'secondary'} onPress={() => store.setTableTheme('luma')} style={styles.flex} />
           <LumaButton label={t('settings.tableThemeKahvehane')} variant={store.tableTheme === 'kahvehane' ? 'primary' : 'secondary'} onPress={() => store.setTableTheme('kahvehane')} style={styles.flex} />
         </View>
-        <Text style={[styles.themeBody, { color: colors.muted }]}>{t('settings.tableThemeBody')}</Text>
+        <Text maxFontSizeMultiplier={1.8} style={[styles.themeBody, { color: colors.muted }]}>{t('settings.tableThemeBody')}</Text>
         <SettingRow title={t('settings.motion')} value={store.reducedMotion} onToggle={store.toggleReducedMotion} />
         <SettingRow title={t('settings.performance')} value={store.lowPerformance} onToggle={store.toggleLowPerformance} />
       </View>
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.language')}</Text>
+        <Text maxFontSizeMultiplier={1.5} style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.language')}</Text>
         <View style={styles.row}>
           <LumaButton label="Türkçe" variant={store.language === 'tr' ? 'primary' : 'secondary'} onPress={() => store.setLanguage('tr')} style={styles.flex} />
           <LumaButton label="English" variant={store.language === 'en' ? 'primary' : 'secondary'} onPress={() => store.setLanguage('en')} style={styles.flex} />

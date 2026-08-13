@@ -45,6 +45,7 @@ import { roomEconomyMode, type MockEconomyMode, type RoomEntry } from '../../src
 import { MockChatAdapter } from '../../src/services/mock-chat';
 import { MockVoiceAdapter } from '../../src/services/mock-voice';
 import type { ChatMessage } from '../../src/services/contracts';
+import { botTurnDelayMs } from '../../src/services/table-interaction';
 
 const PLAYERS = ['p0', 'p1', 'p2', 'p3'] as const;
 const LANDSCAPE_TABLE_SHARE = 0.56;
@@ -85,6 +86,7 @@ export default function GameScreen() {
   const [giftSeat, setGiftSeat] = useState<number>();
   const [giftEvent, setGiftEvent] = useState<TableGiftEvent>();
   const [giftCooldownUntil, setGiftCooldownUntil] = useState<number>();
+  const [rackDragActive, setRackDragActive] = useState(false);
   const reducedMotion = useAppStore((state) => state.reducedMotion);
   const lowPerformance = useAppStore((state) => state.lowPerformance);
   const tableTheme = useAppStore((state) => state.tableTheme);
@@ -98,9 +100,10 @@ export default function GameScreen() {
   const recordGift = useAppStore((state) => state.recordGift);
   const applyMockMatchSettlement = useAppStore((state) => state.applyMockMatchSettlement);
   const botBusy = useRef(false);
+  const botCommands = useRef<GameCommand[]>([]);
   const commandIndex = useRef(0);
   const hydrationRequest = useRef<symbol | undefined>(undefined);
-  const audioState = useRef<{ sequence: number; discards: number; melds: number; penalties: number; finished: boolean; turnIndex: number; winnerId?: string | undefined } | undefined>(undefined);
+  const audioState = useRef<{ sequence: number; discards: number; melds: number; penalties: number; finished: boolean; turnIndex: number; winnerIds: readonly string[] } | undefined>(undefined);
   const localGiftAuthority = useRef<LocalGiftAuthority | undefined>(undefined);
   const chatAdapter = useRef(new MockChatAdapter());
   const voiceAdapter = useRef(new MockVoiceAdapter());
@@ -242,7 +245,7 @@ export default function GameScreen() {
       penalties: game.players[0]?.penalties ?? 0,
       finished: game.phase === 'round_finished',
       turnIndex: game.turnIndex,
-      winnerId: game.winnerId,
+      winnerIds: game.settlement?.winnerIds ?? (game.winnerId === undefined ? [] : [game.winnerId]),
     };
     const previous = audioState.current;
     audioState.current = next;
@@ -263,33 +266,54 @@ export default function GameScreen() {
     }
     if (next.finished && !previous.finished) {
       playEffect('win');
-      if (next.winnerId === 'p0') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (next.winnerIds.includes('p0')) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   }, [game, hydratedKey, persistenceKey, playEffect]);
 
   useEffect(() => {
-    if (game.phase === 'round_finished' || game.turnIndex === 0 || botBusy.current) return;
+    if (game.phase === 'round_finished' || game.turnIndex === 0) {
+      botCommands.current = [];
+      botBusy.current = false;
+      return;
+    }
+    if (botBusy.current) return;
+    if (botCommands.current.length === 0) {
+      try {
+        const player = game.players[game.turnIndex];
+        if (player === undefined) return;
+        botCommands.current = [...playDeterministicBotTurn(game, commandIndex.current++, `bot-${player.id}`).commands];
+      } catch {
+        botCommands.current = [];
+        return;
+      }
+    }
+    const nextCommand = botCommands.current[0];
+    if (nextCommand === undefined) return;
     botBusy.current = true;
     const timer = setTimeout(() => {
       setGame((current) => {
         try {
-          const player = current.players[current.turnIndex];
-          if (player === undefined || current.turnIndex === 0 || current.phase === 'round_finished') return current;
-          const result = playDeterministicBotTurn(current, commandIndex.current++, `bot-${player.id}`);
-          return result.state;
+          if (current.turnIndex === 0 || current.phase === 'round_finished') {
+            botCommands.current = [];
+            return current;
+          }
+          const next = applyCommand(current, nextCommand).state;
+          botCommands.current.shift();
+          return next;
         } catch (error) {
+          botCommands.current = [];
           setNotice(error instanceof Error ? error.message : String(error));
-          return current;
+          return { ...current };
         } finally {
           botBusy.current = false;
         }
       });
-    }, reducedMotion ? 720 : 900 + (game.sequence % 4) * 110);
+    }, botTurnDelayMs(game.sequence, nextCommand.type));
     return () => {
       clearTimeout(timer);
       botBusy.current = false;
     };
-  }, [game.phase, game.sequence, game.turnIndex, reducedMotion]);
+  }, [game]);
 
   const runUserCommand = (kind: 'draw' | 'discard') => {
     if (kind === 'draw') {
@@ -305,6 +329,24 @@ export default function GameScreen() {
     applyUserCommand((current) => selectedFinishMelds === undefined
       ? { type: 'discard', tileId: selectedId, commandId: `user-discard-${current.sequence}`, playerId: 'p0', expectedSequence: current.sequence }
       : { type: 'finish', discardTileId: selectedId, melds: selectedFinishMelds, commandId: `user-finish-${current.sequence}`, playerId: 'p0', expectedSequence: current.sequence });
+    setSelectedId(undefined);
+  };
+
+  const discardRackTile = (tileId: string) => {
+    if (game.phase !== 'awaiting_discard' || game.turnIndex !== 0) return;
+    const player = game.players[0];
+    if (player === undefined) return;
+    const remaining = player.rack.filter((tile) => tile.id !== tileId);
+    const finishMelds = variant === '101' && !player.opened && !game.rules.allowDirectFinishBelowThreshold101
+      ? undefined
+      : findWinningMelds(remaining, game.indicator, {
+          allowHighAceWrap: variant === 'classic' && game.rules.classicHighAceRun,
+          allowSevenPairs: variant === 'classic' && game.rules.allowSevenPairsClassic,
+          pairsOnly: variant === '101' && player.openingMode === 'pairs',
+        });
+    applyUserCommand((current) => finishMelds === undefined
+      ? { type: 'discard', tileId, commandId: `user-drag-discard-${current.sequence}`, playerId: 'p0', expectedSequence: current.sequence }
+      : { type: 'finish', discardTileId: tileId, melds: finishMelds, commandId: `user-drag-finish-${current.sequence}`, playerId: 'p0', expectedSequence: current.sequence });
     setSelectedId(undefined);
   };
 
@@ -464,10 +506,16 @@ export default function GameScreen() {
   const compactLandscapeActions = isLandscape && playColumnWidth < 360;
   const roundFinished = game.phase === 'round_finished';
   const userCanAct = game.turnIndex === 0 && !roundFinished;
-  const winnerIndex = game.players.findIndex((player) => player.id === game.winnerId);
-  const roundStatus = game.winnerId === undefined
+  const roundWinnerIds = game.settlement?.winnerIds ?? (game.winnerId === undefined ? [] : [game.winnerId]);
+  const roundWinnerNames = roundWinnerIds.map((winnerId) => {
+    const winnerIndex = game.players.findIndex((player) => player.id === winnerId);
+    return playerNames[winnerIndex] ?? winnerId;
+  });
+  const roundStatus = roundWinnerNames.length === 0
     ? t('game.roundDraw')
-    : t('game.roundWinner', { name: playerNames[winnerIndex] ?? game.winnerId });
+    : roundWinnerNames.length === 1
+      ? t('game.roundWinner', { name: roundWinnerNames[0] })
+      : t('game.roundWinners', { names: roundWinnerNames.join(', ') });
   const userRoundScore = game.settlement?.entries.find((entry) => entry.playerId === 'p0')?.delta;
 
   const table = (
@@ -487,20 +535,21 @@ export default function GameScreen() {
       wallDrawEnabled={game.phase === 'awaiting_draw' && game.turnIndex === 0 && !roundFinished}
       onWallDraw={() => runUserCommand('draw')}
       wallDropDirection={isLandscape ? 'right' : 'down'}
+      rackDropActive={rackDragActive}
     />
   );
 
   const playControls = (
     <View style={[styles.playColumn, { width: playColumnWidth }]}>
       <View style={styles.statusRow}>
-        <Text style={[styles.status, { color: roundFinished ? palette.gold : userCanAct ? palette.aqua : colors.muted }]}>
+        <Text maxFontSizeMultiplier={1.6} numberOfLines={2} adjustsFontSizeToFit style={[styles.status, { color: roundFinished ? palette.gold : userCanAct ? palette.aqua : colors.muted }]}>
           {roundFinished
             ? roundStatus
             : userCanAct
               ? t('game.yourTurn')
               : t('game.waiting', { name: playerNames[game.turnIndex] ?? t('game.you') })}
         </Text>
-        <Text style={[styles.wall, { color: colors.muted }]}>
+        <Text maxFontSizeMultiplier={1.6} numberOfLines={2} adjustsFontSizeToFit style={[styles.wall, { color: colors.muted }]}>
           {roundFinished && userRoundScore !== undefined
             ? t('game.roundScore', { score: userRoundScore })
             : game.tableMelds.length > 0
@@ -517,6 +566,11 @@ export default function GameScreen() {
         theme={roomTableTheme}
         onSelect={(tileId) => setSelectedId((current) => current === tileId ? undefined : tileId)}
         onMove={moveTile}
+        onDiscard={discardRackTile}
+        discardEnabled={game.phase === 'awaiting_discard' && game.turnIndex === 0 && !roundFinished}
+        discardDirection={isLandscape ? 'left' : 'up'}
+        interactionEnabled={userCanAct}
+        onDragActive={setRackDragActive}
       />
       {notice.length > 0 && <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text>}
       {(automaticOpening !== undefined || automaticExtension !== undefined) && (
@@ -536,7 +590,7 @@ export default function GameScreen() {
           onPress={() => runUserCommand(game.phase === 'awaiting_draw' ? 'draw' : 'discard')}
           style={[styles.primary, compactLandscapeActions && styles.compactAction, { opacity: userCanAct ? 1 : 0.45 }]}
         >
-          <Text numberOfLines={1} adjustsFontSizeToFit style={styles.primaryLabel}>
+          <Text maxFontSizeMultiplier={1.5} numberOfLines={2} adjustsFontSizeToFit style={styles.primaryLabel}>
             {roundFinished
               ? t('game.roundComplete')
               : game.phase === 'awaiting_draw'
@@ -553,7 +607,7 @@ export default function GameScreen() {
           style={[styles.secondary, compactLandscapeActions && styles.compactSecondary, { backgroundColor: colors.glass }]}
         >
           <MessageCircle color={colors.text} />
-          {!compactLandscapeActions && <Text style={[styles.secondaryLabel, { color: colors.text }]}>{t('game.chat')}</Text>}
+          {!compactLandscapeActions && <Text maxFontSizeMultiplier={1.4} numberOfLines={1} adjustsFontSizeToFit style={[styles.secondaryLabel, { color: colors.text }]}>{t('game.chat')}</Text>}
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -581,8 +635,8 @@ export default function GameScreen() {
           <ChevronLeft color={colors.text} />
         </Pressable>
         <View style={styles.heading}>
-          <Text style={[styles.variant, { color: colors.text }]}>{variant === 'classic' ? t('game.classic') : t('game.101')}</Text>
-          <Text style={[styles.seed, { color: colors.muted }]}>{t('game.replaySeed', { seed })}</Text>
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} adjustsFontSizeToFit style={[styles.variant, { color: colors.text }]}>{variant === 'classic' ? t('game.classic') : t('game.101')}</Text>
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} adjustsFontSizeToFit style={[styles.seed, { color: colors.muted }]}>{t('game.replaySeed', { seed })}</Text>
         </View>
         <Pressable accessibilityRole="switch" accessibilityState={{ checked: musicPlaying }} onPress={toggleMusic} style={[styles.iconButton, { backgroundColor: colors.glass }]}>
           {musicPlaying ? <Music2 color={palette.aqua} /> : <VolumeX color={colors.muted} />}

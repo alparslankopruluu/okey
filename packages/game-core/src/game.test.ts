@@ -438,8 +438,19 @@ describe('match state', () => {
     expect(complete.winnerIds).toEqual(['a']);
   });
 
+  it('rejects duplicate, incomplete, and cross-profile settlement receipts', () => {
+    const match = createMatch({ gameId: 'receipt-guard', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 4 });
+    const entry = { playerId: 'a', delta: 1, deadwood: 1, opened: true, winner: false };
+    expect(() => recordMatchRound(match, {
+      profile: '101-fixed-open-v1', reason: 'wall_exhausted', entries: [entry, entry, { ...entry, playerId: 'b' }, { ...entry, playerId: 'c' }],
+    })).toThrow(/does not match/);
+    expect(() => recordMatchRound(match, {
+      profile: 'classic-standard-v1', reason: 'wall_exhausted', entries: ['a', 'b', 'c', 'd'].map((playerId) => ({ ...entry, playerId })),
+    })).toThrow(/does not match/);
+  });
+
   it('uses the highest cumulative Classic room score as the match winner', () => {
-    const match = createMatch({ gameId: 'classic-match', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 9 });
+    const match = createMatch({ gameId: 'classic-match', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 9, config: { economyMode: 'mock_stake_100' } });
     const complete = recordMatchRound(match, {
       profile: 'classic-standard-v1', reason: 'finish', winnerId: 'a',
       entries: [
@@ -450,6 +461,7 @@ describe('match state', () => {
       ],
     });
     expect(complete.winnerIds).toEqual(['a']);
+    expect(settleMatchEconomy(complete).entries.map((entry) => entry.payout)).toEqual([300, 34, 33, 33]);
   });
 
   it('settles mock stakes with deterministic 300/100 payouts and refunds when nobody opened', () => {
@@ -468,6 +480,22 @@ describe('match state', () => {
     expect(settleMatchEconomy(complete).entries.map((entry) => entry.payout)).toEqual([300, 100, 0, 0]);
     const noneOpened = recordMatchRound(base, { ...settlement, entries: settlement.entries.map((entry) => ({ ...entry, opened: false })) });
     expect(settleMatchEconomy(noneOpened)).toMatchObject({ refunded: true, entries: [{ payout: 100 }, { payout: 100 }, { payout: 100 }, { payout: 100 }] });
+  });
+
+  it('keeps a direct-hand 101 winner eligible even when no player previously opened', () => {
+    const match = createMatch({ gameId: 'direct-hand-stake', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 3, config: { economyMode: 'mock_stake_100' } });
+    const complete = recordMatchRound(match, {
+      profile: '101-fixed-open-v1', reason: 'finish', winnerId: 'a', finishStyle: 'hand',
+      entries: [
+        { playerId: 'a', delta: -202, deadwood: 0, opened: false, winner: true },
+        { playerId: 'b', delta: 404, deadwood: 30, opened: false, winner: false },
+        { playerId: 'c', delta: 404, deadwood: 40, opened: false, winner: false },
+        { playerId: 'd', delta: 404, deadwood: 50, opened: false, winner: false },
+      ],
+    });
+    const economy = settleMatchEconomy(complete);
+    expect(economy.refunded).toBe(false);
+    expect(economy.entries[0]).toMatchObject({ playerId: 'a', payout: 400, eligible: true });
   });
 
   it('scales mock room settlement to the exact displayed entry price', () => {
@@ -564,5 +592,19 @@ describe('round settlement', () => {
     const settlement = settleRound({ ...game, indicator, players }, { reason: 'wall_exhausted' });
     expect(settlement.winnerIds).toEqual(['a']);
     expect(settlement.entries.map((entry) => entry.winner)).toEqual([true, false, false, false]);
+  });
+
+  it('includes accumulated 101 rule penalties exactly once in wall-exhaustion deltas and ranking', () => {
+    const game = createGame({ gameId: 'scores-wall-penalties', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 9 });
+    const players = game.players.map((player, index) => index === 0
+      ? { ...player, opened: true, rack: [tileByValue('red', 1)], penalties: 101 }
+      : index === 1
+        ? { ...player, opened: true, rack: [tileByValue('blue', 10)], penalties: 0 }
+        : { ...player, rack: [tileByValue('yellow', 5, index % 2 as 0 | 1)], penalties: index === 2 ? 101 : 0 });
+    const settlement = settleRound({ ...game, indicator, players }, { reason: 'wall_exhausted' });
+
+    expect(settlement.winnerIds).toEqual(['b']);
+    expect(settlement.entries.map((entry) => entry.delta)).toEqual([202, 10, 303, 202]);
+    expect(settlement.entries.map((entry) => entry.penalties ?? 0)).toEqual([101, 0, 101, 0]);
   });
 });

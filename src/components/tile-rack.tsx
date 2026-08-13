@@ -1,9 +1,11 @@
 import type { Tile } from '@luma/game-core';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as React from 'react';
 import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { TileCard } from './tile-card';
 import { images } from '../assets';
 import { palette, radius, space } from '../theme/tokens';
+import type { RackDropDirection } from '../services/table-interaction';
 
 interface TileRackProps {
   tiles: Tile[];
@@ -14,6 +16,11 @@ interface TileRackProps {
   theme?: 'luma' | 'kahvehane';
   onSelect(tileId: string): void;
   onMove(tileId: string, delta: number): void;
+  onDiscard?(tileId: string): void;
+  discardEnabled?: boolean;
+  discardDirection?: RackDropDirection;
+  interactionEnabled?: boolean;
+  onDragActive?: ((active: boolean) => void) | undefined;
 }
 
 const TILE_GAP = 3;
@@ -29,7 +36,13 @@ export function TileRack({
   theme = 'luma',
   onSelect,
   onMove,
+  onDiscard,
+  discardEnabled = false,
+  discardDirection = 'up',
+  interactionEnabled = true,
+  onDragActive,
 }: TileRackProps) {
+  const [tileGestureActive, setTileGestureActive] = React.useState(false);
   const columns = Math.max(1, Math.ceil(tiles.length / 2));
   const availableWidth = width - space.sm * 2;
   const fittedWidth = (availableWidth - TILE_GAP * (columns - 1)) / columns;
@@ -42,8 +55,10 @@ export function TileRack({
   return (
     <ScrollView
       horizontal
+      directionalLockEnabled
       accessibilityLabel={accessibilityLabel}
       bounces={false}
+      scrollEnabled={contentWidth > width + 1 && !tileGestureActive}
       contentContainerStyle={styles.scrollContent}
       showsHorizontalScrollIndicator={false}
       style={{ width, height: rackHeight, flexGrow: 0 }}
@@ -73,6 +88,14 @@ export function TileRack({
                   rowStep={tileHeight + 9}
                   onPress={() => onSelect(tile.id)}
                   onMove={(delta) => onMove(tile.id, delta)}
+                  onDiscard={onDiscard === undefined ? undefined : () => onDiscard(tile.id)}
+                  discardEnabled={discardEnabled}
+                  discardDirection={discardDirection}
+                  interactionEnabled={interactionEnabled}
+                  onDragActive={(active) => {
+                    setTileGestureActive(active);
+                    onDragActive?.(active);
+                  }}
                 />
               ))}
             </View>
