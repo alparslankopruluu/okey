@@ -3,8 +3,7 @@ import * as Haptics from 'expo-haptics';
 import {
   GameRuleError,
   applyCommand,
-  createGame,
-  createMatch,
+  createMatchRound,
   findOpeningMelds101,
   findTableExtension,
   findWinningMelds,
@@ -14,6 +13,8 @@ import {
   type GameState,
   type GameCommand,
   type GameVariant,
+  type MatchConfig,
+  type MatchState,
 } from '@luma/game-core';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronLeft, MessageCircle, Mic, Music2, Send, VolumeX, X } from 'lucide-react-native';
@@ -34,7 +35,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OkeyTable, type SeatDiscard, type TableGiftEvent } from '../../src/components/okey-table';
 import { TileRack } from '../../src/components/tile-rack';
 import { useAppTheme } from '../../src/hooks/use-app-theme';
-import { decodeOfflineMatch, encodeOfflineMatch, offlineMatchIdentity } from '../../src/services/offline-match';
+import { createOfflineMatchSession, decodeOfflineMatchSession, encodeOfflineMatchSession, offlineMatchIdentity } from '../../src/services/offline-match';
 import { useAppStore } from '../../src/stores/app-store';
 import { palette, radius, space } from '../../src/theme/tokens';
 import { useLumaAudio } from '../../src/audio/audio-provider';
@@ -47,7 +48,6 @@ import { MockVoiceAdapter } from '../../src/services/mock-voice';
 import type { ChatMessage } from '../../src/services/contracts';
 import { botTurnDelayMs } from '../../src/services/table-interaction';
 
-const PLAYERS = ['p0', 'p1', 'p2', 'p3'] as const;
 const LANDSCAPE_TABLE_SHARE = 0.56;
 const LANDSCAPE_TABLE_MAX_WIDTH = 620;
 const PORTRAIT_TABLE_MAX_WIDTH = 620;
@@ -55,25 +55,29 @@ const LANDSCAPE_TABLE_MAX_HEIGHT = 310;
 const PORTRAIT_TABLE_MAX_HEIGHT = 360;
 const LANDSCAPE_HEADER_HEIGHT = 44;
 
-function newMatch(variant: GameVariant, seed: number): GameState {
-  return createGame({ gameId: `offline-${variant}-${seed}`, variant, playerIds: PLAYERS, seed });
-}
-
 export default function GameScreen() {
   const { t } = useTranslation();
   const { colors } = useAppTheme();
   const { playEffect, setTableAudio, setVoiceActive } = useLumaAudio();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ variant?: string; seed?: string; tableTheme?: string; economyMode?: string; entryChips?: string; roomId?: string }>();
+  const params = useLocalSearchParams<{ variant?: string; seed?: string; tableTheme?: string; economyMode?: string; entryChips?: string; roomId?: string; roundCount?: string; openingThresholdMode?: string; assistanceMode?: string }>();
   const variant: GameVariant = params.variant === '101' ? '101' : 'classic';
   const seed = Number.isFinite(Number(params.seed)) ? Number(params.seed) : 20260811;
   const requestedEntry = Number(params.entryChips);
   const entryChips: RoomEntry = requestedEntry === 100 || requestedEntry === 500 || requestedEntry === 1000 ? requestedEntry : 0;
   const economyMode: MockEconomyMode = roomEconomyMode(entryChips);
+  const requestedRounds = Number(params.roundCount);
+  const roundCount = (requestedRounds >= 1 && requestedRounds <= 4 ? requestedRounds : 1) as MatchConfig['roundCount'];
+  const openingThresholdMode: MatchConfig['openingThresholdMode'] = params.openingThresholdMode === 'progressive' ? 'progressive' : 'fixed';
+  const assistanceMode: MatchConfig['assistanceMode'] = params.assistanceMode === 'unassisted' ? 'unassisted' : 'assisted';
+  const matchConfig = useMemo<Partial<MatchConfig>>(() => ({ roundCount, openingThresholdMode, assistanceMode, economyMode }), [assistanceMode, economyMode, openingThresholdMode, roundCount]);
   const identity = useMemo(() => offlineMatchIdentity(variant, seed), [seed, variant]);
-  const persistenceKey = `luma-match-v1-${variant}-${seed}`;
-  const [game, setGame] = useState(() => newMatch(variant, seed));
+  const persistenceKey = `luma-match-v4-${variant}-${seed}-${roundCount}-${openingThresholdMode}-${assistanceMode}-${economyMode}`;
+  const initialSession = useMemo(() => createOfflineMatchSession(identity, matchConfig), [identity, matchConfig]);
+  const [game, setGame] = useState(() => initialSession.currentRound);
+  const [match, setMatch] = useState<MatchState>(() => initialSession.match);
+  const [completedRoundStates, setCompletedRoundStates] = useState<readonly GameState[]>(() => initialSession.completedRoundStates);
   const [hydratedKey, setHydratedKey] = useState<string>();
   const [selectedId, setSelectedId] = useState<string>();
   const [rackOrder, setRackOrder] = useState<string[]>([]);
@@ -96,7 +100,7 @@ export default function GameScreen() {
   const chips = useAppStore((state) => state.chips);
   const setMockChipBalance = useAppStore((state) => state.setMockChipBalance);
   const giftHistory = useAppStore((state) => state.giftHistory);
-  const blockedUserIds = useAppStore((state) => state.blockedUserIds);
+  const blockUser = useAppStore((state) => state.blockUser);
   const recordGift = useAppStore((state) => state.recordGift);
   const applyMockMatchSettlement = useAppStore((state) => state.applyMockMatchSettlement);
   const botBusy = useRef(false);
@@ -109,7 +113,7 @@ export default function GameScreen() {
   const voiceAdapter = useRef(new MockVoiceAdapter());
   if (localGiftAuthority.current === undefined) {
     localGiftAuthority.current = new LocalGiftAuthority(chips, giftHistory, {
-      isBlocked: (_senderId, recipientId) => blockedUserIds.includes(recipientId),
+      isBlocked: (_senderId, recipientId) => useAppStore.getState().blockedUserIds.includes(recipientId),
     });
   }
   const playerNames = useMemo(() => [t('game.you'), 'Ada', 'Mert', 'Lina'] as const, [t]);
@@ -138,7 +142,7 @@ export default function GameScreen() {
   }, [game.indicator, game.phase, game.players, game.rules.allowDirectFinishBelowThreshold101, game.rules.allowSevenPairsClassic, game.rules.classicHighAceRun, game.turnIndex, selectedId, variant]);
   const automaticOpening = useMemo(() => {
     const player = game.players[0];
-    if (variant !== '101' || game.phase !== 'awaiting_discard' || game.turnIndex !== 0 || player === undefined || player.opened) return undefined;
+    if (match.config.assistanceMode !== 'assisted' || variant !== '101' || game.phase !== 'awaiting_discard' || game.turnIndex !== 0 || player === undefined || player.opened) return undefined;
     return findOpeningMelds101(
       player.rack,
       game.indicator,
@@ -146,10 +150,10 @@ export default function GameScreen() {
       game.rules.pairsRequiredToOpen101,
       game.rules.allowPairsOpening101,
     );
-  }, [game.indicator, game.phase, game.players, game.rules.allowPairsOpening101, game.rules.openingPoints101, game.rules.pairsRequiredToOpen101, game.turnIndex, variant]);
+  }, [game.indicator, game.phase, game.players, game.rules.allowPairsOpening101, game.rules.openingPoints101, game.rules.pairsRequiredToOpen101, game.turnIndex, match.config.assistanceMode, variant]);
   const automaticExtension = useMemo(
-    () => variant === '101' && game.phase === 'awaiting_discard' && game.turnIndex === 0 ? findTableExtension(game, 'p0') : undefined,
-    [game, variant],
+    () => match.config.assistanceMode === 'assisted' && variant === '101' && game.phase === 'awaiting_discard' && game.turnIndex === 0 ? findTableExtension(game, 'p0') : undefined,
+    [game, match.config.assistanceMode, variant],
   );
   const latestDiscards = useMemo<readonly SeatDiscard[]>(() => {
     const byPlayer = new Map<string, (typeof game.discardHistory)[number]>();
@@ -181,15 +185,17 @@ export default function GameScreen() {
     const request = Symbol(persistenceKey);
     hydrationRequest.current = request;
     void (async () => {
-      const fresh = newMatch(variant, seed);
+      const fresh = createOfflineMatchSession(identity, matchConfig);
       try {
         const saved = await AsyncStorage.getItem(persistenceKey);
         if (hydrationRequest.current !== request) return;
-        const restored = saved === null ? undefined : decodeOfflineMatch(saved, identity);
-        setGame(restored ?? fresh);
+        const restored = saved === null ? undefined : decodeOfflineMatchSession(saved, identity);
+        setMatch(restored?.match ?? fresh.match);
+        setGame(restored?.currentRound ?? fresh.currentRound);
+        setCompletedRoundStates(restored?.completedRoundStates ?? fresh.completedRoundStates);
         if (saved !== null && restored === undefined) await AsyncStorage.removeItem(persistenceKey);
       } catch {
-        if (hydrationRequest.current === request) setGame(fresh);
+        if (hydrationRequest.current === request) { setMatch(fresh.match); setGame(fresh.currentRound); setCompletedRoundStates([]); }
       } finally {
         if (hydrationRequest.current === request) setHydratedKey(persistenceKey);
       }
@@ -197,28 +203,38 @@ export default function GameScreen() {
     return () => {
       if (hydrationRequest.current === request) hydrationRequest.current = undefined;
     };
-  }, [identity, persistenceKey, seed, variant]);
+  }, [identity, matchConfig, persistenceKey]);
 
   useEffect(() => {
     if (hydratedKey !== persistenceKey) return;
-    void AsyncStorage.setItem(persistenceKey, encodeOfflineMatch(game));
-  }, [game, hydratedKey, persistenceKey]);
+    void AsyncStorage.setItem(persistenceKey, encodeOfflineMatchSession({ match, currentRound: game, completedRoundStates }));
+  }, [completedRoundStates, game, hydratedKey, match, persistenceKey]);
 
   useEffect(() => {
-    if (game.phase !== 'round_finished' || game.settlement === undefined || entryChips === 0) return;
-    const matchId = `${params.roomId ?? identity.gameId}:${String(seed)}:${economyMode}`;
-    const match = createMatch({
-      gameId: matchId,
-      variant,
-      playerIds: PLAYERS,
-      seed,
-      config: { economyMode },
-    });
-    const completed = recordMatchRound(match, game.settlement);
-    const economy = settleMatchEconomy(completed);
+    if (game.phase !== 'round_finished' || game.settlement === undefined) return;
+    const timer = setTimeout(() => {
+      setMatch((current) => {
+        const expectedGameId = `${current.gameId}:round:${String(current.completedRounds.length + 1)}`;
+        if (game.gameId !== expectedGameId) return current;
+        const seriesPoints = Math.max(...game.players.flatMap((player) => player.openingPoints === undefined ? [] : [player.openingPoints]));
+        const pairsCount = Math.max(...game.players.flatMap((player) => player.openingPairsCount === undefined ? [] : [player.openingPairsCount]));
+        return recordMatchRound(current, game.settlement as NonNullable<GameState['settlement']>, {
+          ...(Number.isFinite(seriesPoints) ? { seriesPoints } : {}),
+          ...(Number.isFinite(pairsCount) ? { pairsCount } : {}),
+        });
+      });
+      setCompletedRoundStates((states) => states.some((state) => state.gameId === game.gameId) ? states : [...states, game]);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [game]);
+
+  useEffect(() => {
+    if (entryChips === 0 || match.completedRounds.length !== match.config.roundCount) return;
+    const matchId = `${params.roomId ?? identity.gameId}:${String(seed)}:${economyMode}:${String(match.config.roundCount)}`;
+    const economy = settleMatchEconomy(match);
     const playerEntry = economy.entries.find((entry) => entry.playerId === 'p0');
     if (playerEntry !== undefined) applyMockMatchSettlement(matchId, playerEntry.net);
-  }, [applyMockMatchSettlement, economyMode, entryChips, game.phase, game.settlement, identity.gameId, params.roomId, seed, variant]);
+  }, [applyMockMatchSettlement, economyMode, entryChips, identity.gameId, match, params.roomId, seed]);
 
   useEffect(() => {
     setTableAudio(true, seed);
@@ -425,7 +441,10 @@ export default function GameScreen() {
   const applyChatSafetyAction = (action: 'mute' | 'block' | 'report') => {
     if (chatSafetyTarget === undefined) return;
     if (action === 'mute') chatAdapter.current.mute('p0', chatSafetyTarget.senderId);
-    if (action === 'block') chatAdapter.current.block('p0', chatSafetyTarget.senderId);
+    if (action === 'block') {
+      chatAdapter.current.block('p0', chatSafetyTarget.senderId);
+      blockUser(chatSafetyTarget.senderId);
+    }
     if (action === 'report') chatAdapter.current.report({ reporterId: 'p0', messageId: chatSafetyTarget.id, reason: 'other', now: Date.now() });
     setMessages(chatAdapter.current.list(identity.gameId, 'p0', Date.now()).slice(-20));
     setChatSafetyTarget(undefined);
@@ -482,6 +501,17 @@ export default function GameScreen() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
+  const startNextRound = () => {
+    if (game.phase !== 'round_finished' || match.completedRounds.length >= match.config.roundCount) return;
+    const next = createMatchRound(match);
+    setGame(next);
+    setSelectedId(undefined);
+    setRackOrder([]);
+    setNotice('');
+    botCommands.current = [];
+    audioState.current = undefined;
+  };
+
   const isLandscape = width > height;
   const rootPaddingTop = isLandscape
     ? Math.max(insets.top, space.xxs)
@@ -505,6 +535,7 @@ export default function GameScreen() {
     : Math.min(height * 0.36, PORTRAIT_TABLE_MAX_HEIGHT);
   const compactLandscapeActions = isLandscape && playColumnWidth < 360;
   const roundFinished = game.phase === 'round_finished';
+  const canAdvanceRound = roundFinished && match.completedRounds.length > 0 && match.completedRounds.length < match.config.roundCount;
   const userCanAct = game.turnIndex === 0 && !roundFinished;
   const roundWinnerIds = game.settlement?.winnerIds ?? (game.winnerId === undefined ? [] : [game.winnerId]);
   const roundWinnerNames = roundWinnerIds.map((winnerId) => {
@@ -585,14 +616,16 @@ export default function GameScreen() {
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: !userCanAct }}
-          disabled={!userCanAct}
-          onPress={() => runUserCommand(game.phase === 'awaiting_draw' ? 'draw' : 'discard')}
-          style={[styles.primary, compactLandscapeActions && styles.compactAction, { opacity: userCanAct ? 1 : 0.45 }]}
+          accessibilityState={{ disabled: !userCanAct && !canAdvanceRound }}
+          disabled={!userCanAct && !canAdvanceRound}
+          onPress={() => canAdvanceRound ? startNextRound() : runUserCommand(game.phase === 'awaiting_draw' ? 'draw' : 'discard')}
+          style={[styles.primary, compactLandscapeActions && styles.compactAction, { opacity: userCanAct || canAdvanceRound ? 1 : 0.45 }]}
         >
           <Text maxFontSizeMultiplier={1.5} numberOfLines={2} adjustsFontSizeToFit style={styles.primaryLabel}>
-            {roundFinished
-              ? t('game.roundComplete')
+            {canAdvanceRound
+              ? t('game.nextRound')
+              : roundFinished
+                ? t('game.roundComplete')
               : game.phase === 'awaiting_draw'
                 ? t('game.draw')
                 : selectedFinishMelds !== undefined

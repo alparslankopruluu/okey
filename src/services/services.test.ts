@@ -109,6 +109,18 @@ describe('gift economy', () => {
     expect(nextGiftId('room_1', 20_000, history)).toBe('gift-room_1-20000');
   });
 
+  it('reads the local gift block policy at send time', () => {
+    const blocked = new Set<string>();
+    const gifts = new LocalGiftAuthority(5_000, [], {
+      isBlocked: (_senderId, recipientId) => blocked.has(recipientId),
+    });
+
+    blocked.add('p2');
+
+    expect(() => gifts.send({ idempotencyKey: 'blocked-after-open', recipientId: 'p2', giftId: 'tea', roomId: 'room_1', now: 10_000 })).toThrow(/Blocked/);
+    expect(gifts.balance()).toBe(5_000);
+  });
+
   it('uses the fixed catalog, spends only the sender, and is idempotent', () => {
     expect(GIFT_CATALOG).toEqual([
       { id: 'tea', chipCost: 50 }, { id: 'coffee', chipCost: 100 }, { id: 'chocolate', chipCost: 150 },
@@ -162,14 +174,20 @@ describe('friendships and notifications', () => {
     expect(() => social.register({ userId: 'c', username: 'alice_1', displayName: 'Duplicate', now: 0 })).toThrow(/taken/);
     expect(social.search('a', 'bo')).toMatchObject([{ userId: 'b' }]);
     const pending = social.sendRequest('a', 'b', 1);
+    expect(social.incomingRequests('b')).toEqual([pending]);
     expect(social.respondToRequest('b', 'a', true, 2)).toMatchObject({ status: 'accepted' });
+    expect(social.friendsFor('a')).toMatchObject([{ userId: 'b' }]);
+    expect(social.profile('b')).toMatchObject({ username: 'Bora_2' });
     expect(social.inviteToRoom({ senderId: 'a', recipientId: 'b', roomId: 'room_1', now: 3, expiresAt: 4 }).id).toBe('invite_1');
     expect(() => social.renameUsername('a', 'AliceNew', 30 * 24 * 60 * 60 * 1000 - 1)).toThrow(/30 days/);
     expect(social.renameUsername('a', 'AliceNew', 30 * 24 * 60 * 60 * 1000)).toMatchObject({ username: 'AliceNew' });
     expect(pending.status).toBe('pending');
     social.block('a', 'b');
+    expect(social.friendsFor('a')).toHaveLength(0);
     expect(social.search('a', 'bo')).toHaveLength(0);
     expect(() => social.sendRequest('a', 'b', 5)).toThrow(/Blocked/);
+    social.unblock('a', 'b');
+    expect(social.search('a', 'bo')).toMatchObject([{ userId: 'b' }]);
   });
 
   it('enforces outgoing request limits and lets a recipient reject', () => {

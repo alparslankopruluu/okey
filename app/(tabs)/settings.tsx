@@ -8,6 +8,7 @@ import { SettingRow } from '../../src/components/setting-row';
 import { useAppTheme } from '../../src/hooks/use-app-theme';
 import { useAppStore } from '../../src/stores/app-store';
 import { palette, space } from '../../src/theme/tokens';
+import { VolumeControl } from '../../src/components/volume-control';
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
@@ -22,11 +23,14 @@ export default function SettingsScreen() {
           <LumaButton label={store.musicPlaying ? t('settings.pause') : t('settings.play')} onPress={store.toggleMusic} style={styles.flex} />
           <LumaButton label={t('settings.nextTrack')} icon={<SkipForward size={18} color={colors.text} />} variant="secondary" onPress={store.nextMusicTrack} style={styles.flex} />
         </View>
+        <VolumeControl label={t('settings.musicVolume')} decreaseLabel={t('settings.decreaseMusic')} increaseLabel={t('settings.increaseMusic')} value={store.musicVolume} disabled={!store.musicPlaying} onChange={store.setMusicVolume} />
       </View>
       <View style={styles.section}>
         <Text maxFontSizeMultiplier={1.5} style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.sound')}</Text>
         <SettingRow title={t('settings.effects')} body={t('settings.effectsBody')} value={store.effectsEnabled} onToggle={store.toggleEffects} />
+        <VolumeControl label={t('settings.effectsVolume')} decreaseLabel={t('settings.decreaseEffects')} increaseLabel={t('settings.increaseEffects')} value={store.effectsVolume} disabled={!store.effectsEnabled} onChange={store.setEffectsVolume} />
         <SettingRow title={t('settings.ambient')} body={t('settings.ambientBody')} value={store.ambientEnabled} onToggle={store.toggleAmbient} />
+        <VolumeControl label={t('settings.ambientVolume')} decreaseLabel={t('settings.decreaseAmbient')} increaseLabel={t('settings.increaseAmbient')} value={store.ambientVolume} disabled={!store.ambientEnabled} onChange={store.setAmbientVolume} />
       </View>
       <View style={styles.section}>
         <Text maxFontSizeMultiplier={1.5} style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.theme')}</Text>

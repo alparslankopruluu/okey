@@ -355,6 +355,21 @@ describe('101 opening', () => {
     expect(finished.settlement?.entries.map((entry) => entry.delta)).toEqual([-101, 202, 202, 202]);
   });
 
+  it('raises the progressive series threshold immediately after a successful opening', () => {
+    const groups = [sequence('blue', [10, 11, 12, 13]), sequence('black', [10, 11, 12, 13]), sequence('yellow', [4, 5, 6])];
+    const discard = tileByValue('yellow', 1);
+    const game = createGame({ gameId: '101-progressive-live', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 7, rules: { progressiveOpening101: true } });
+    const player = game.players[0];
+    if (player === undefined) throw new Error('Expected first player');
+    const state = { ...game, indicator, players: [{ ...player, rack: [...groups.flat(), discard] }, ...game.players.slice(1)] };
+    const melds: Meld[] = groups.map((tiles) => ({ kind: 'sequence', tileIds: tiles.map((tile) => tile.id) }));
+    const points = validateMeldCollection(melds, state.players[0]?.rack ?? [], indicator).points;
+    const opened = applyCommand(state, { type: 'open_melds', commandId: 'progressive-open', playerId: 'a', expectedSequence: 0, melds }).state;
+    expect(opened.players[0]).toMatchObject({ openingPoints: points });
+    expect(opened.rules.openingPoints101).toBe(points + 1);
+    expect(opened.rules.pairsRequiredToOpen101).toBe(5);
+  });
+
   it('returns a same-turn opening to the rack and applies exactly one +101 penalty', () => {
     const groups = [sequence('blue', [10, 11, 12, 13]), sequence('black', [10, 11, 12, 13]), sequence('yellow', [4, 5, 6])];
     const discard = tileByValue('yellow', 1);
@@ -371,6 +386,36 @@ describe('101 opening', () => {
     expect(returned.state.tableMelds).toHaveLength(0);
     expect(returned.events).toContainEqual({ type: 'penalty_applied', playerId: 'a', points: 101, reason: 'opening_taken_back' });
     expect(returned.state.phase).toBe('awaiting_discard');
+  });
+
+  it('emits one playable-discard penalty before wall-exhaustion settlement without changing the settlement', () => {
+    const game = createGame({ gameId: '101-terminal-playable-discard', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 7 });
+    const discard = tileByValue('blue', 9);
+    const tableTiles = sequence('blue', [10, 11, 12]);
+    const player = game.players[0];
+    if (player === undefined) throw new Error('Expected first player');
+    const state = {
+      ...game,
+      indicator,
+      wall: [],
+      players: [{ ...player, opened: true, rack: [discard] }, ...game.players.slice(1)],
+      tableMelds: [{ id: 'opened-blue-run', ownerId: 'a', kind: 'sequence' as const, tiles: tableTiles }],
+    };
+    const expectedSettlement = settleRound({
+      ...state,
+      players: [{ ...player, opened: true, rack: [], penalties: 101 }, ...game.players.slice(1)],
+    }, { reason: 'wall_exhausted' });
+
+    const result = applyCommand(state, {
+      type: 'discard', commandId: 'terminal-playable-discard', playerId: 'a', expectedSequence: 0, tileId: discard.id,
+    });
+
+    expect(result.events.map((event) => event.type)).toEqual(['tile_discarded', 'penalty_applied', 'round_finished']);
+    expect(result.events.filter((event) => event.type === 'penalty_applied')).toEqual([
+      { type: 'penalty_applied', playerId: 'a', points: 101, reason: 'playable_discard' },
+    ]);
+    expect(result.state.settlement).toEqual(expectedSettlement);
+    expect(result.events.at(-1)).toMatchObject({ type: 'round_finished', settlement: expectedSettlement });
   });
 
   it('finds a deterministic legal opening selection and rejects a layoff that consumes the required discard', () => {

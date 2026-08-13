@@ -1,11 +1,55 @@
-import { createGame, playDeterministicBotRound } from '@luma/game-core';
+import { createGame, createMatchRound, playDeterministicBotRound, recordMatchRound } from '@luma/game-core';
 import { describe, expect, it } from 'vitest';
-import { decodeOfflineMatch, encodeOfflineMatch, offlineMatchIdentity } from './offline-match';
+import { createOfflineMatchSession, decodeOfflineMatch, decodeOfflineMatchSession, encodeOfflineMatch, encodeOfflineMatchSession, offlineMatchIdentity } from './offline-match';
 
 const identity = offlineMatchIdentity('classic', 42);
 const game = createGame({ ...identity, playerIds: ['p0', 'p1', 'p2', 'p3'] });
 
 describe('offline match persistence', () => {
+  it('round-trips a v4 multi-round session and advances the dealer after reload', () => {
+    const session = createOfflineMatchSession(identity, { roundCount: 2 });
+    const completedRound = playDeterministicBotRound(session.currentRound).state;
+    if (completedRound.settlement === undefined) throw new Error('Expected settlement');
+    const match = recordMatchRound(session.match, completedRound.settlement);
+    const completedSession = { match, currentRound: completedRound, completedRoundStates: [completedRound] };
+    expect(decodeOfflineMatchSession(encodeOfflineMatchSession(completedSession), identity)).toEqual(completedSession);
+    const nextRound = createMatchRound(match);
+    expect(nextRound.dealerIndex).toBe(1);
+  });
+
+  it('records progressive opening evidence but resets a new round to 101/5', () => {
+    const identity101 = offlineMatchIdentity('101', 10142);
+    const session = createOfflineMatchSession(identity101, { roundCount: 2, openingThresholdMode: 'progressive' });
+    const completedRound = playDeterministicBotRound(session.currentRound).state;
+    if (completedRound.settlement === undefined) throw new Error('Expected settlement');
+    const match = recordMatchRound(session.match, completedRound.settlement, { seriesPoints: 104 });
+    const nextRound = createMatchRound(match);
+    expect(nextRound).toMatchObject({ dealerIndex: 1, rules: { openingPoints101: 101, pairsRequiredToOpen101: 5, progressiveOpening101: true } });
+    const active = { match, currentRound: nextRound, completedRoundStates: [completedRound] };
+    expect(decodeOfflineMatchSession(encodeOfflineMatchSession(active), identity101)).toEqual(active);
+  });
+
+  it('migrates a valid v3 game into a one-round v4 session', () => {
+    const migrated = decodeOfflineMatchSession(encodeOfflineMatch(game), identity);
+    expect(migrated?.match.config.roundCount).toBe(1);
+    expect(migrated?.currentRound).toMatchObject({ gameId: `${identity.gameId}:round:1`, dealerIndex: 0 });
+  });
+
+  it('rejects tampered v4 cumulative totals and config/round mismatch', () => {
+    const session = createOfflineMatchSession(identity, { roundCount: 2 });
+    const tampered = { ...session, match: { ...session.match, penaltiesByPlayerId: { ...session.match.penaltiesByPlayerId, p0: 99 } } };
+    expect(decodeOfflineMatchSession(encodeOfflineMatchSession(tampered), identity)).toBeUndefined();
+    const wrongDealer = { ...session, currentRound: { ...session.currentRound, dealerIndex: 2 } };
+    expect(decodeOfflineMatchSession(encodeOfflineMatchSession(wrongDealer), identity)).toBeUndefined();
+  });
+
+  it('recovers a terminal round saved immediately before its match summary', () => {
+    const session = createOfflineMatchSession(identity, { roundCount: 2 });
+    const completedRound = playDeterministicBotRound(session.currentRound).state;
+    const recovered = decodeOfflineMatchSession(encodeOfflineMatchSession({ ...session, currentRound: completedRound }), identity);
+    expect(recovered?.match.completedRounds).toHaveLength(1);
+    expect(recovered?.currentRound).toEqual(completedRound);
+  });
   it('round-trips the versioned match envelope', () => {
     expect(decodeOfflineMatch(encodeOfflineMatch(game), identity)).toEqual(game);
   });

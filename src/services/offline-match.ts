@@ -1,9 +1,14 @@
 import {
+  createMatch,
+  createMatchRound,
+  recordMatchRound,
   settleRound,
   validateMeld,
   type GamePhase,
   type GameState,
   type GameVariant,
+  type MatchConfig,
+  type MatchState,
   type DiscardRecord,
   type PlayerState,
   type RoundEndReason,
@@ -15,10 +20,17 @@ import {
 } from '@luma/game-core';
 
 const STORAGE_VERSION = 3;
+const SESSION_VERSION = 4;
 const PHASES: readonly GamePhase[] = ['awaiting_draw', 'awaiting_discard', 'round_finished'];
 const COLORS = new Set(['red', 'blue', 'black', 'yellow']);
 
 type MatchIdentity = Pick<GameState, 'gameId' | 'variant' | 'seed'>;
+
+export interface OfflineMatchSession {
+  readonly match: MatchState;
+  readonly currentRound: GameState;
+  readonly completedRoundStates: readonly GameState[];
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -50,8 +62,9 @@ function isRuleConfig(value: unknown): value is RuleConfig {
   return typeof value.allowSevenPairsClassic === 'boolean'
     && typeof value.classicHighAceRun === 'boolean'
     && typeof value.allowPairsOpening101 === 'boolean'
-    && typeof value.pairsRequiredToOpen101 === 'number'
-    && typeof value.openingPoints101 === 'number'
+    && Number.isSafeInteger(value.pairsRequiredToOpen101) && Number(value.pairsRequiredToOpen101) >= 1
+    && Number.isSafeInteger(value.openingPoints101) && Number(value.openingPoints101) >= 1
+    && typeof value.progressiveOpening101 === 'boolean'
     && typeof value.allowDirectFinishBelowThreshold101 === 'boolean'
     && typeof value.allowDiscardPickupWithoutImmediateUse === 'boolean'
     && (value.discardProbePolicy === 'allow_return' || value.discardProbePolicy === 'commit_or_penalty')
@@ -66,6 +79,10 @@ function isPlayer(value: unknown): value is PlayerState {
     && value.rack.every(isTile)
     && typeof value.opened === 'boolean'
     && (value.openingMode === undefined || value.openingMode === 'melds' || value.openingMode === 'pairs')
+    && (value.openingPoints === undefined || (Number.isSafeInteger(value.openingPoints) && Number(value.openingPoints) >= 0))
+    && (value.openingPairsCount === undefined || (Number.isSafeInteger(value.openingPairsCount) && Number(value.openingPairsCount) >= 0))
+    && (value.openingPoints === undefined || (value.opened && value.openingMode === 'melds'))
+    && (value.openingPairsCount === undefined || (value.opened && value.openingMode === 'pairs'))
     && typeof value.roundScore === 'number'
     && (value.penalties === undefined || (typeof value.penalties === 'number' && Number.isSafeInteger(value.penalties) && value.penalties >= 0));
 }
@@ -294,4 +311,115 @@ export function decodeOfflineMatch(serialized: string, identity: MatchIdentity):
 
 export function offlineMatchIdentity(variant: GameVariant, seed: number): MatchIdentity {
   return { gameId: `offline-${variant}-${seed}`, variant, seed };
+}
+
+function isMatchConfig(value: unknown): value is MatchConfig {
+  return isRecord(value)
+    && (value.openingThresholdMode === 'fixed' || value.openingThresholdMode === 'progressive')
+    && Number.isInteger(value.roundCount) && Number(value.roundCount) >= 1 && Number(value.roundCount) <= 4
+    && (value.assistanceMode === 'assisted' || value.assistanceMode === 'unassisted')
+    && ['casual', 'mock_stake_100', 'mock_stake_500', 'mock_stake_1000'].includes(String(value.economyMode));
+}
+
+function isMatchState(value: unknown, identity: MatchIdentity): value is MatchState {
+  if (!isRecord(value) || value.variant !== identity.variant || value.seed !== identity.seed
+    || typeof value.gameId !== 'string' || !isUnknownArray(value.playerIds) || value.playerIds.length !== 4
+    || new Set(value.playerIds).size !== 4 || !value.playerIds.every((id) => typeof id === 'string' && id.length > 0)
+    || !isMatchConfig(value.config) || !isUnknownArray(value.completedRounds)
+    || value.completedRounds.length > value.config.roundCount || !isRecord(value.penaltiesByPlayerId)
+    || !isUnknownArray(value.winnerIds)) return false;
+  const ids = new Set(value.playerIds as string[]);
+  if (Object.keys(value.penaltiesByPlayerId).length !== 4
+    || Object.entries(value.penaltiesByPlayerId).some(([id, total]) => !ids.has(id) || !Number.isSafeInteger(total))
+    || !value.winnerIds.every((id) => typeof id === 'string' && ids.has(id))) return false;
+  const players = (value.playerIds as string[]).map((id) => ({ id, rack: [], opened: false, roundScore: 0 }));
+  if (!value.completedRounds.every((round, index) => isRecord(round)
+    && round.round === index + 1 && round.starterIndex === index % 4
+    && isRecord(round.settlement)
+    && (round.opening === undefined || (isRecord(round.opening)
+      && (round.opening.seriesPoints === undefined || Number.isSafeInteger(round.opening.seriesPoints))
+      && (round.opening.pairsCount === undefined || Number.isSafeInteger(round.opening.pairsCount))))
+    && isSettlement(round.settlement, players, round.settlement.reason as RoundEndReason, round.settlement.winnerId as string | undefined))) return false;
+  try {
+    let rebuilt = createMatch({
+      gameId: value.gameId,
+      variant: value.variant as GameVariant,
+      playerIds: value.playerIds as unknown as [string, string, string, string],
+      seed: value.seed,
+      config: value.config,
+    });
+    for (const round of value.completedRounds as MatchState['completedRounds']) {
+      rebuilt = recordMatchRound(rebuilt, round.settlement, round.opening);
+    }
+    return JSON.stringify(rebuilt) === JSON.stringify(value);
+  } catch {
+    return false;
+  }
+}
+
+export function createOfflineMatchSession(identity: MatchIdentity, config: Partial<MatchConfig> = {}): OfflineMatchSession {
+  const match = createMatch({ gameId: identity.gameId, variant: identity.variant, playerIds: ['p0', 'p1', 'p2', 'p3'], seed: identity.seed, config });
+  return { match, currentRound: createMatchRound(match), completedRoundStates: [] };
+}
+
+export function encodeOfflineMatchSession(session: OfflineMatchSession): string {
+  return JSON.stringify({ version: SESSION_VERSION, ...session });
+}
+
+export function decodeOfflineMatchSession(serialized: string, identity: MatchIdentity): OfflineMatchSession | undefined {
+  try {
+    const parsed: unknown = JSON.parse(serialized);
+    if (isRecord(parsed) && parsed.version === SESSION_VERSION && isMatchState(parsed.match, identity)) {
+      let match = parsed.match;
+      if (!isUnknownArray(parsed.completedRoundStates)) return undefined;
+      const completedRoundStates = parsed.completedRoundStates;
+      if (completedRoundStates.length !== match.completedRounds.length) return undefined;
+      for (let index = 0; index < completedRoundStates.length; index += 1) {
+        const summary = match.completedRounds[index];
+        const terminal = completedRoundStates[index];
+        const terminalIdentity = { gameId: `${identity.gameId}:round:${String(index + 1)}`, variant: identity.variant, seed: (identity.seed + index) >>> 0 };
+        if (summary === undefined || !isGameState(terminal, terminalIdentity) || terminal.phase !== 'round_finished'
+          || terminal.settlement === undefined || !sameSettlement(terminal.settlement, summary.settlement)
+          || terminal.dealerIndex !== summary.starterIndex) return undefined;
+      }
+      const validatedCompletedRoundStates = completedRoundStates as GameState[];
+      if (isRecord(parsed.currentRound) && parsed.currentRound.phase === 'round_finished') {
+        const expectedNextId = `${identity.gameId}:round:${String(match.completedRounds.length + 1)}`;
+        const expectedNextSeed = (identity.seed + match.completedRounds.length) >>> 0;
+        const nextIdentity = { gameId: expectedNextId, variant: identity.variant, seed: expectedNextSeed };
+        if (isGameState(parsed.currentRound, nextIdentity) && parsed.currentRound.settlement !== undefined) {
+          const seriesPoints = Math.max(...parsed.currentRound.players.flatMap((player) => player.openingPoints === undefined ? [] : [player.openingPoints]));
+          const pairsCount = Math.max(...parsed.currentRound.players.flatMap((player) => player.openingPairsCount === undefined ? [] : [player.openingPairsCount]));
+          match = recordMatchRound(match, parsed.currentRound.settlement, {
+            ...(Number.isFinite(seriesPoints) ? { seriesPoints } : {}),
+            ...(Number.isFinite(pairsCount) ? { pairsCount } : {}),
+          });
+          return { match, currentRound: parsed.currentRound, completedRoundStates: [...validatedCompletedRoundStates, parsed.currentRound] };
+        }
+        const roundNumber = match.completedRounds.length;
+        const summary = match.completedRounds.at(-1);
+        const roundIdentity = { gameId: `${identity.gameId}:round:${String(roundNumber)}`, variant: identity.variant, seed: (identity.seed + roundNumber - 1) >>> 0 };
+        return roundNumber > 0 && summary !== undefined
+          && isGameState(parsed.currentRound, roundIdentity)
+          && parsed.currentRound.dealerIndex === summary.starterIndex
+          && sameSettlement(parsed.currentRound.settlement as RoundSettlement, summary.settlement)
+          ? { match, currentRound: parsed.currentRound, completedRoundStates: validatedCompletedRoundStates }
+          : undefined;
+      }
+      if (match.completedRounds.length >= match.config.roundCount) return undefined;
+      const expected = createMatchRound(match);
+      const currentIdentity = { gameId: expected.gameId, variant: expected.variant, seed: expected.seed };
+      return isGameState(parsed.currentRound, currentIdentity)
+        && parsed.currentRound.dealerIndex === expected.dealerIndex
+        && JSON.stringify(parsed.currentRound.rules) === JSON.stringify(expected.rules)
+        ? { match, currentRound: parsed.currentRound, completedRoundStates: validatedCompletedRoundStates }
+        : undefined;
+    }
+    const legacy = decodeOfflineMatch(serialized, identity);
+    if (legacy === undefined) return undefined;
+    const match = createMatch({ gameId: identity.gameId, variant: identity.variant, playerIds: ['p0', 'p1', 'p2', 'p3'], seed: identity.seed });
+    return { match, currentRound: { ...legacy, gameId: `${identity.gameId}:round:1` }, completedRoundStates: [] };
+  } catch {
+    return undefined;
+  }
 }

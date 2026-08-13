@@ -44,6 +44,8 @@ interface AppStore {
   setMockChipBalance(balance: number): void;
   recordGift(receipt: PersistedGiftReceipt): void;
   applyMockMatchSettlement(matchId: string, net: number): void;
+  blockUser(userId: string): void;
+  unblockUser(userId: string): void;
   selectAvatar(index: number): void;
 }
 
@@ -105,6 +107,10 @@ export const useAppStore = create<AppStore>()(
         if (state.settledMockMatches.includes(matchId) || !Number.isSafeInteger(net) || state.chips + net < 0) return state;
         return { chips: state.chips + net, settledMockMatches: [...state.settledMockMatches, matchId] };
       }),
+      blockUser: (userId) => set((state) => userId === 'p0' || state.blockedUserIds.includes(userId)
+        ? state
+        : { blockedUserIds: [...state.blockedUserIds, userId] }),
+      unblockUser: (userId) => set((state) => ({ blockedUserIds: state.blockedUserIds.filter((blockedId) => blockedId !== userId) })),
       selectAvatar: (avatarIndex) => set({ avatarIndex }),
     }),
     {

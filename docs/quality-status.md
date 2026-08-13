@@ -67,6 +67,11 @@
   101 rooms rank the lowest penalty. Settlement receipts reject duplicate/missing players
   and cross-variant profiles; direct-hand 101 winners remain economy-eligible, while 101
   wall-exhaustion single/tied winners propagate to localized result and haptic surfaces.
+- Offline persistence v4 stores the immutable match config, cumulative authoritative totals,
+  successful 101 opening evidence, and current round together. Tests prove dealer rotation,
+  same-round progressive threshold mutation plus 101/5 next-round reset, v3 one-round migration, and rejection of tampered
+  totals/config/dealer state. A terminal playable-discard +101 now also emits exactly one
+  warning event before wall-exhaustion settlement.
 - A regenerated native iOS Debug build succeeds under Xcode 26.6 and launches on the
   iPhone 16 Pro iOS 18.3 simulator. The same live match was observed in portrait and both
   landscape directions with the Kahvehane rack, white deterministic tile faces, four
@@ -94,6 +99,16 @@
   [`ios-reduced-motion-draw-fixed.png`](evidence/simulator-2026-08-13/ios-reduced-motion-draw-fixed.png),
   [`ios-landscape-opposite-table.png`](evidence/simulator-2026-08-12/ios-landscape-opposite-table.png),
   and [`android-tablet-development-build.png`](evidence/simulator-2026-08-13/android-tablet-development-build.png).
+- The same iOS development build now exposes complete local request/friend actions. A live
+  request acceptance moved Ada into the friend list with invite/remove/block controls, and
+  the settings screen changed effects from 32% to 40% while enabling the independent
+  ambience control. See
+  [`profile-friends-accepted.png`](evidence/simulator-2026-08-13/profile-friends-accepted.png) and
+  [`settings-volume-controls.png`](evidence/simulator-2026-08-13/settings-volume-controls.png).
+- Offline setup now exposes 1–4 rounds plus 101 fixed/progressive and assisted/unassisted
+  choices; a live three-round progressive unassisted match launched with the correct 22/21
+  opening racks and no assisted auto-action surface. See
+  [`offline-multiround-progressive.png`](evidence/simulator-2026-08-13/offline-multiround-progressive.png).
 - Native artifact proof: the iOS simulator executable SHA-256 is
   `3778c47bdeeeb00510e8e797ffa08982a138f98269fd258753848ffbf4dd0fce`.
   Android package/version/SDK and APK integrity remain recorded from the successful
@@ -110,6 +125,9 @@
   Android development builds themselves now pass; the iOS build contains upstream script/
   Swift warnings but no project compile error.
 - Firebase, Cloudflare deploy, RealtimeKit, RevenueCat/store catalogs, signing, licensed music, and store uploads remain explicit human/provider TODOs.
+- Foreground/background/terminated FCM delivery, token refresh readback, and notification
+  deep-link acceptance remain on the approved dev-Firebase/device gate; the current mock
+  build intentionally does not import unconfigured native Firebase modules.
 - Android native smoke testing caught an unconfigured App Check startup crash before handoff.
   Mock builds now exclude RN Firebase native autolinking until the approved dev Firebase
   config gate supplies and verifies both platform config files.

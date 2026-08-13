@@ -24,6 +24,7 @@ export const DEFAULT_RULES: RuleConfig = {
   allowPairsOpening101: true,
   pairsRequiredToOpen101: 5,
   openingPoints101: 101,
+  progressiveOpening101: false,
   allowDirectFinishBelowThreshold101: true,
   allowDiscardPickupWithoutImmediateUse: false,
   discardProbePolicy: 'allow_return',
@@ -242,7 +243,13 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     if (nextRack.length < 1) throw new GameRuleError('discard_required', 'Opening must leave one tile to discard');
     const openedTableMelds = tableMeldsFrom(state, player, command.melds, player.rack, 'open');
     const openingMeldIds = openedTableMelds.map((meld) => meld.id);
-    const nextPlayer = { ...player, rack: nextRack, opened: true, openingMode: pairsOpening ? 'pairs' as const : 'melds' as const };
+    const nextPlayer = {
+      ...player,
+      rack: nextRack,
+      opened: true,
+      openingMode: pairsOpening ? 'pairs' as const : 'melds' as const,
+      ...(pairsOpening ? { openingPairsCount: command.melds.length } : { openingPoints: result.points }),
+    };
     events.push({
       type: 'melds_opened',
       playerId: player.id,
@@ -255,6 +262,14 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
         players: replacePlayer(state, nextPlayer),
         tableMelds: [...state.tableMelds, ...openedTableMelds],
         turnContext: { ...state.turnContext, openingMeldIds },
+        rules: state.rules.progressiveOpening101
+          ? {
+              ...state.rules,
+              ...(pairsOpening
+                ? { pairsRequiredToOpen101: command.melds.length + 1 }
+                : { openingPoints101: result.points + 1 }),
+            }
+          : state.rules,
       }),
       events,
       duplicate: false,
@@ -269,7 +284,7 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     const openingMelds = state.tableMelds.filter((meld) => openingIds.has(meld.id) && meld.ownerId === player.id);
     if (openingMelds.length !== openingIds.size) throw new GameRuleError('opening_take_back_stale', 'Opening melds changed before take-back');
     const returnedTiles = openingMelds.flatMap((meld) => meld.tiles);
-    const { openingMode: _openingMode, ...penalizedPlayer } = addPenalty(player, 101);
+    const { openingMode: _openingMode, openingPoints: _openingPoints, openingPairsCount: _openingPairsCount, ...penalizedPlayer } = addPenalty(player, 101);
     const nextPlayer: PlayerState = {
       ...penalizedPlayer,
       rack: [...player.rack, ...returnedTiles],
@@ -380,13 +395,13 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   }
 
   if (state.wall.length === 0) {
-    const penalizedPlayer = shouldPenalizePlayableDiscard(state, player, discard) ? addPenalty(player, 101) : player;
+    const playableDiscardPenalty = shouldPenalizePlayableDiscard(state, player, discard);
+    const penalizedPlayer = playableDiscardPenalty ? addPenalty(player, 101) : player;
     const playersAfterDiscard = replacePlayer(state, { ...penalizedPlayer, rack: remainingRack });
     const settlement = settleRound({ ...state, players: playersAfterDiscard }, { reason: 'wall_exhausted' });
-    events.push(
-      { type: 'tile_discarded', playerId: player.id, tile: discard },
-      { type: 'round_finished', reason: 'wall_exhausted', discard, settlement },
-    );
+    events.push({ type: 'tile_discarded', playerId: player.id, tile: discard });
+    if (playableDiscardPenalty) events.push({ type: 'penalty_applied', playerId: player.id, points: 101, reason: 'playable_discard' });
+    events.push({ type: 'round_finished', reason: 'wall_exhausted', discard, settlement });
     return {
       state: withCommand(state, command, {
         phase: 'round_finished',

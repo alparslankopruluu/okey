@@ -138,6 +138,12 @@ export class InMemoryFriendshipService {
     this.friendships.delete(id);
   }
 
+  public unblock(firstUserId: string, secondUserId: string): void {
+    this.requireProfile(firstUserId);
+    this.requireProfile(secondUserId);
+    this.blockedPairs.delete(pairId(firstUserId, secondUserId));
+  }
+
   public isBlocked(firstUserId: string, secondUserId: string): boolean {
     return this.blockedPairs.has(pairId(firstUserId, secondUserId));
   }
@@ -159,6 +165,26 @@ export class InMemoryFriendshipService {
 
   public areFriends(firstUserId: string, secondUserId: string): boolean {
     return this.friendships.get(pairId(firstUserId, secondUserId))?.status === 'accepted';
+  }
+
+  public incomingRequests(recipientId: string): readonly Friendship[] {
+    this.requireProfile(recipientId);
+    return [...this.friendships.values()]
+      .filter((friendship) => friendship.recipientId === recipientId && friendship.status === 'pending' && !this.isBlocked(friendship.requesterId, recipientId))
+      .sort((left, right) => left.createdAt - right.createdAt);
+  }
+
+  public friendsFor(userId: string): readonly SocialProfile[] {
+    this.requireProfile(userId);
+    return [...this.friendships.values()]
+      .filter((friendship) => friendship.status === 'accepted' && (friendship.requesterId === userId || friendship.recipientId === userId))
+      .map((friendship) => this.requireProfile(friendship.requesterId === userId ? friendship.recipientId : friendship.requesterId))
+      .filter((profile) => !this.isBlocked(userId, profile.userId))
+      .sort((left, right) => left.username.localeCompare(right.username));
+  }
+
+  public profile(userId: string): SocialProfile {
+    return this.requireProfile(userId);
   }
 
   private requireProfile(userId: string): SocialProfile {

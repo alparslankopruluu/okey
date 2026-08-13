@@ -38,12 +38,6 @@ export function createMatch(options: {
 export function createMatchRound(match: MatchState): GameState {
   if (match.completedRounds.length >= match.config.roundCount) throw new Error('Match is already complete');
   const round = match.completedRounds.length;
-  const seriesThreshold = match.config.openingThresholdMode === 'progressive'
-    ? (match.lastSuccessfulSeriesOpeningPoints ?? DEFAULT_RULES.openingPoints101) + (match.lastSuccessfulSeriesOpeningPoints === undefined ? 0 : 1)
-    : DEFAULT_RULES.openingPoints101;
-  const pairThreshold = match.config.openingThresholdMode === 'progressive'
-    ? (match.lastSuccessfulPairsOpeningCount ?? DEFAULT_RULES.pairsRequiredToOpen101) + (match.lastSuccessfulPairsOpeningCount === undefined ? 0 : 1)
-    : DEFAULT_RULES.pairsRequiredToOpen101;
   return createGame({
     gameId: `${match.gameId}:round:${round + 1}`,
     variant: match.variant,
@@ -52,8 +46,9 @@ export function createMatchRound(match: MatchState): GameState {
     dealerIndex: round % match.playerIds.length,
     rules: {
       ...DEFAULT_RULES,
-      openingPoints101: seriesThreshold,
-      pairsRequiredToOpen101: pairThreshold,
+      openingPoints101: DEFAULT_RULES.openingPoints101,
+      pairsRequiredToOpen101: DEFAULT_RULES.pairsRequiredToOpen101,
+      progressiveOpening101: match.config.openingThresholdMode === 'progressive',
     },
   });
 }
@@ -79,6 +74,7 @@ export function recordMatchRound(
     round: match.completedRounds.length + 1,
     starterIndex: match.completedRounds.length % match.playerIds.length,
     settlement,
+    ...(opening === undefined ? {} : { opening }),
   };
   const penaltiesByPlayerId = { ...match.penaltiesByPlayerId };
   for (const entry of settlement.entries) {

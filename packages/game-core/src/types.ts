@@ -57,6 +57,9 @@ export interface PlayerState {
   readonly rack: readonly Tile[];
   readonly opened: boolean;
   readonly openingMode?: OpeningMode;
+  /** Successful 101 opening evidence used by progressive multi-round matches. */
+  readonly openingPoints?: number;
+  readonly openingPairsCount?: number;
   readonly roundScore: number;
   /** Rule penalties accrued during this hand, separate from deadwood. */
   readonly penalties?: number;
@@ -87,6 +90,7 @@ export interface MatchRoundSummary {
   readonly round: number;
   readonly starterIndex: number;
   readonly settlement: RoundSettlement;
+  readonly opening?: { readonly seriesPoints?: number; readonly pairsCount?: number };
 }
 
 export interface MatchState {
@@ -122,6 +126,7 @@ export interface RuleConfig {
   readonly allowPairsOpening101: boolean;
   readonly pairsRequiredToOpen101: number;
   readonly openingPoints101: number;
+  readonly progressiveOpening101: boolean;
   readonly allowDirectFinishBelowThreshold101: boolean;
   readonly allowDiscardPickupWithoutImmediateUse: boolean;
   readonly discardProbePolicy: 'allow_return' | 'commit_or_penalty';

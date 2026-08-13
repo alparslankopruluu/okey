@@ -53,6 +53,9 @@ nine-tile rack in portrait and landscape.
 - [x] Level/chip room catalog exposes casual and clearly labelled mock-stake tiers; purchased-chip production stakes remain disabled by feature flag.
 - [x] In-room gift sheet exposes recipient avatar, authoritative mock balance, affordability, explicit confirmation, and five-second cooldown in portrait and landscape.
 - [x] Mock gift cooldown/hour/day history persists across route remounts; exact room entry tiers propagate into 100/500/1,000-chip mock settlement without changing production stake gates.
+- [x] Profile exposes incoming-request accept/reject, friend list, private-room invite, remove, block, and unblock actions; a chat block updates the same persisted policy read by in-room gift authority before every send.
+- [x] Settings exposes independent accessible music, effects, and ambience volume controls using the existing three-channel audio state.
+- [x] Offline v4 persists authoritative `MatchState` with the active round, validates cumulative totals/config/dealer/rule thresholds, migrates v1–v3 into a safe one-round session, and resumes fixed/progressive 1–4 round play.
 
 **Done when:** local tests prove protocol/economy/social invariants without requiring any real provider account.
 
@@ -61,6 +64,7 @@ nine-tile rack in portrait and landscape.
 - [x] Lint, typecheck, game-core/Worker/app tests, translation parity, Expo Doctor and local Firebase rules/policy tests pass; dependency audit risk is documented pending upstream-compatible fixes.
 - [x] iOS and Android development builds run on simulator/emulator; iOS portrait/both landscape directions, VoiceOver labels, gifts, bot pacing, rooms, and Kahvehane layout are recorded.
 - [x] Large text and Android portrait/both-landscape orientation evidence recorded. Reduced Motion is enabled and a full discard → three bot turns → draw cycle is captured on the iOS simulator.
+- [x] iOS Simulator proves request acceptance updates the friend list and effect/ambience volume controls mutate and enable correctly; screenshots and accessibility-tree readback are recorded.
 - [ ] Physical-device performance, interrupted/repeated drag gestures, and Maestro evidence recorded.
 - [ ] Real-device voice and purchase sandbox acceptance completed after human provider setup.
 - [ ] Firebase/Cloudflare/RealtimeKit/RevenueCat dev resources created only after separate approval and verified by readback.
