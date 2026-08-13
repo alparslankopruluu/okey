@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assertGiftBalance, assertSafeId, assertUsernameChangeAllowed, friendshipPairId, giftCost, nextGiftRate, normalizeUsername, sameGiftReceipt } from './policies.js';
+import { invalidTokensFromBatch, notificationEnvelope, verifiedGiftBridgeRequest } from './delivery.js';
 
 describe('Firebase callable policy helpers', () => {
   it('normalizes valid usernames and rejects invalid input', () => {
@@ -35,5 +36,43 @@ describe('Firebase callable policy helpers', () => {
     const receipt = { senderId: 'alice', recipientId: 'bob', giftId: 'tea', roomId: 'room_1' };
     expect(sameGiftReceipt(receipt, { ...receipt })).toBe(true);
     expect(sameGiftReceipt(receipt, { ...receipt, recipientId: 'mallory' })).toBe(false);
+  });
+
+  it('derives safe push envelopes without leaking notification content', () => {
+    expect(notificationEnvelope('notice_1', { type: 'room_invite', inviteId: 'invite_1', actorId: 'alice', roomId: 'room_1' })).toEqual({
+      type: 'room_invite', notificationId: 'notice_1', deepLinkId: 'invite_1',
+    });
+    expect(() => notificationEnvelope('notice_2', { type: 'chat_message', inviteId: 'invite_2' })).toThrow('invalid_push_type');
+    expect(() => notificationEnvelope('notice_3', { type: 'gift_received', giftId: 'https://unsafe.example' })).toThrow('invalid_identifier');
+  });
+
+  it('extracts only invalid FCM tokens from multicast results', () => {
+    const response = {
+      successCount: 1,
+      failureCount: 2,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+        { success: false, error: { code: 'messaging/internal-error' } },
+      ],
+    } as never;
+    expect(invalidTokensFromBatch(['valid-token', 'stale-token', 'retry-token'], response)).toEqual(['stale-token']);
+  });
+
+  it('builds an authenticated HTTPS-only gift bridge request', () => {
+    const request = verifiedGiftBridgeRequest({
+      receiptId: 'receipt_1',
+      receipt: { roomId: 'room_1', senderId: 'alice', recipientId: 'bob', giftId: 'tea', chipCost: 50, createdAt: 1 },
+      bridgeBaseUrl: 'https://rooms.example.test/base',
+      bridgeToken: 'secret-token',
+    });
+    expect(request.url).toBe('https://rooms.example.test/internal/v1/rooms/room_1/gift-receipts');
+    expect(request.init.headers).toEqual({ 'Content-Type': 'application/json', Authorization: 'Bearer secret-token' });
+    expect(() => verifiedGiftBridgeRequest({
+      receiptId: 'receipt_2',
+      receipt: { roomId: 'room_1' },
+      bridgeBaseUrl: 'http://rooms.example.test',
+      bridgeToken: 'secret-token',
+    })).toThrow('gift_bridge_requires_https');
   });
 });

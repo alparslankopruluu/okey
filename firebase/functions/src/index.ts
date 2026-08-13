@@ -2,10 +2,15 @@ import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { defineSecret } from 'firebase-functions/params';
 import { assertGiftBalance, assertSafeId, assertUsernameChangeAllowed, friendshipPairId, giftCost, nextGiftRate, normalizeUsername, sameGiftReceipt } from './policies.js';
+import { invalidTokensFromBatch, notificationEnvelope, verifiedGiftBridgeRequest } from './delivery.js';
 
 initializeApp();
 const db = getFirestore();
+const roomGiftBridgeUrl = defineSecret('ROOM_GIFT_BRIDGE_URL');
+const roomGiftBridgeToken = defineSecret('ROOM_GIFT_BRIDGE_TOKEN');
 
 function uid(request: { readonly auth?: { readonly uid: string } }): string {
   if (request.auth === undefined) throw new HttpsError('unauthenticated', 'Authentication required');
@@ -113,11 +118,18 @@ export const inviteToRoom = onCall({ enforceAppCheck: true }, async (request) =>
   const recipientId = String(request.data?.recipientId ?? '');
   const roomId = String(request.data?.roomId ?? '');
   assertSafeId(roomId);
-  const pair = await db.doc(`friendships/${friendshipPairId(senderId, recipientId)}`).get();
-  if (!pair.exists || pair.data()?.status !== 'accepted') throw new HttpsError('permission-denied', 'Friends only');
   const invite = db.collection('roomInvites').doc();
-  await invite.set({ senderId, recipientId, roomId, createdAt: FieldValue.serverTimestamp(), expiresAt: Date.now() + 3_600_000 });
-  await db.doc(`users/${recipientId}/notifications/${invite.id}`).set({ type: 'room_invite', actorId: senderId, roomId, inviteId: invite.id, createdAt: Date.now(), readAt: null });
+  const pairId = friendshipPairId(senderId, recipientId);
+  await db.runTransaction(async (transaction) => {
+    const [pair, block] = await Promise.all([
+      transaction.get(db.doc(`friendships/${pairId}`)),
+      transaction.get(db.doc(`blocks/${pairId}`)),
+    ]);
+    if (block.exists || !pair.exists || pair.data()?.status !== 'accepted') throw new HttpsError('permission-denied', 'Friends only');
+    const now = Date.now();
+    transaction.create(invite, { senderId, recipientId, roomId, createdAt: FieldValue.serverTimestamp(), expiresAt: now + 3_600_000 });
+    transaction.create(db.doc(`users/${recipientId}/notifications/${invite.id}`), { type: 'room_invite', actorId: senderId, roomId, inviteId: invite.id, createdAt: now, readAt: null });
+  });
   return { inviteId: invite.id };
 });
 
@@ -160,14 +172,52 @@ export const spendGift = onCall({ enforceAppCheck: true }, async (request) => {
 });
 
 export async function removeStaleTokens(tokens: readonly string[], invalidTokens: readonly string[]): Promise<number> {
-  const invalid = new Set(invalidTokens);
-  const matching = await db.collectionGroup('devices').where('token', 'in', tokens.slice(0, 30)).get();
-  const batch = db.batch(); let count = 0;
-  for (const doc of matching.docs) if (invalid.has(String(doc.data().token))) { batch.delete(doc.ref); count += 1; }
-  if (count > 0) await batch.commit();
+  const requested = new Set(tokens);
+  const invalid = [...new Set(invalidTokens)].filter((token) => requested.has(token));
+  let count = 0;
+  for (let index = 0; index < invalid.length; index += 30) {
+    const chunk = invalid.slice(index, index + 30);
+    if (chunk.length === 0) continue;
+    const matching = await db.collectionGroup('devices').where('token', 'in', chunk).get();
+    const batch = db.batch();
+    for (const doc of matching.docs) {
+      if (!chunk.includes(String(doc.data().token))) continue;
+      batch.delete(doc.ref);
+      count += 1;
+    }
+    if (matching.size > 0) await batch.commit();
+  }
   return count;
 }
 
 export async function sendPush(tokens: readonly string[], type: string, notificationId: string, deepLinkId: string): Promise<void> {
-  await getMessaging().sendEachForMulticast({ tokens: [...tokens], data: { type, notificationId, deepLinkId } });
+  const response = await getMessaging().sendEachForMulticast({ tokens: [...tokens], data: { type, notificationId, deepLinkId } });
+  await removeStaleTokens(tokens, invalidTokensFromBatch(tokens, response));
 }
+
+export const deliverNotification = onDocumentCreated('users/{userId}/notifications/{notificationId}', async (event) => {
+  const snapshot = event.data;
+  if (snapshot === undefined) return;
+  const envelope = notificationEnvelope(event.params.notificationId, snapshot.data());
+  const devices = await db.collection(`users/${event.params.userId}/devices`).get();
+  const tokens = [...new Set(devices.docs.map((doc) => String(doc.data().token ?? '')).filter((token) => token.length >= 20))];
+  for (let index = 0; index < tokens.length; index += 500) {
+    await sendPush(tokens.slice(index, index + 500), envelope.type, envelope.notificationId, envelope.deepLinkId);
+  }
+});
+
+export const bridgeGiftReceipt = onDocumentCreated({
+  document: 'giftReceipts/{receiptId}',
+  secrets: [roomGiftBridgeUrl, roomGiftBridgeToken],
+}, async (event) => {
+  const snapshot = event.data;
+  if (snapshot === undefined) return;
+  const request = verifiedGiftBridgeRequest({
+    receiptId: event.params.receiptId,
+    receipt: snapshot.data(),
+    bridgeBaseUrl: roomGiftBridgeUrl.value(),
+    bridgeToken: roomGiftBridgeToken.value(),
+  });
+  const response = await fetch(request.url, request.init);
+  if (!response.ok) throw new Error(`gift_bridge_failed_${String(response.status)}`);
+});

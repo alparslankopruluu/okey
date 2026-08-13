@@ -7,6 +7,23 @@
     "packages/*",
     "workers/*"
   ],
+  "expo": {
+    "install": {
+      "exclude": [
+        "@shopify/react-native-skia"
+      ]
+    },
+    "autolinking": {
+      "exclude": [
+        "@react-native-firebase/app",
+        "@react-native-firebase/app-check",
+        "@react-native-firebase/auth",
+        "@react-native-firebase/firestore",
+        "@react-native-firebase/functions",
+        "@react-native-firebase/messaging"
+      ]
+    }
+  },
   "scripts": {
     "start": "expo start --dev-client",
     "ios": "expo run:ios",
@@ -34,7 +51,7 @@
     "@react-native-firebase/firestore": "^26.2.0",
     "@react-native-firebase/functions": "^26.2.0",
     "@react-native-firebase/messaging": "^26.2.0",
-    "@shopify/react-native-skia": "2.6.2",
+    "@shopify/react-native-skia": "2.6.4",
     "babel-preset-expo": "~57.0.0",
     "expo": "57.0.12",
     "expo-asset": "~57.0.10",

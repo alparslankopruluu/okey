@@ -23,6 +23,8 @@ firebase/functions/lib/
 firestore-debug.log
 firebase-debug.log
 ui-debug.log
+GoogleService-Info.plist
+google-services.json
 __pycache__/
 *.pyc
 

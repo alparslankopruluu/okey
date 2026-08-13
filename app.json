@@ -12,7 +12,11 @@
       "bundleIdentifier": "com.alparslankopruluu.lumaokey",
       "buildNumber": "1",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Luma Okey uses the microphone only while you hold push-to-talk in a voice-enabled room. Voice is not recorded by the app."
+        "NSMicrophoneUsageDescription": "Luma Okey uses the microphone only while you hold push-to-talk in a voice-enabled room. Voice is not recorded by the app.",
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -26,7 +30,13 @@
     "plugins": [
       "expo-router",
       "expo-localization",
-      "@react-native-firebase/app",
+      "./plugins/with-rnfirebase-cocoapods",
+      [
+        "@react-native-firebase/app",
+        {
+          "ios": { "disableSPM": true }
+        }
+      ],
       "@react-native-firebase/auth",
       "@react-native-firebase/app-check",
       "@react-native-firebase/messaging",
