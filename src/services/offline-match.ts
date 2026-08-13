@@ -34,14 +34,15 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 
 function isTile(value: unknown): value is Tile {
   if (!isRecord(value) || typeof value.id !== 'string' || (value.copy !== 0 && value.copy !== 1)) return false;
-  if (value.kind === 'false_joker') return value.color === undefined && value.number === undefined;
+  if (value.kind === 'false_joker') return value.id === `false-joker-${value.copy}` && value.color === undefined && value.number === undefined;
   return value.kind === 'normal'
     && typeof value.color === 'string'
     && COLORS.has(value.color)
     && typeof value.number === 'number'
     && Number.isInteger(value.number)
     && value.number >= 1
-    && value.number <= 13;
+    && value.number <= 13
+    && value.id === `${value.color}-${value.number}-${value.copy}`;
 }
 
 function isRuleConfig(value: unknown): value is RuleConfig {
@@ -110,6 +111,15 @@ function isSettlement(value: unknown, players: readonly PlayerState[], reason: R
     && (entry.penalties === undefined || (typeof entry.penalties === 'number' && entry.penalties >= 0)));
 }
 
+function sameSettlement(actual: RoundSettlement, expected: RoundSettlement): boolean {
+  return actual.profile === expected.profile
+    && actual.reason === expected.reason
+    && actual.finishStyle === expected.finishStyle
+    && actual.winnerId === expected.winnerId
+    && JSON.stringify(actual.winnerIds ?? []) === JSON.stringify(expected.winnerIds ?? [])
+    && JSON.stringify(actual.entries) === JSON.stringify(expected.entries);
+}
+
 function isTileValue(value: unknown): value is TileValue {
   return isRecord(value)
     && typeof value.color === 'string'
@@ -162,6 +172,9 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
   const playerIds = new Set(players.map((player) => player.id));
   if (discardHistory.some((record) => !playerIds.has(record.playerId)
     || (record.pickedBy !== undefined && !playerIds.has(record.pickedBy)))) return false;
+  if (discardHistory.some((record, index) => index > 0 && record.sequence <= (discardHistory[index - 1]?.sequence ?? 0))) return false;
+  const liveHistory = discardHistory.filter((record) => record.pickedBy === undefined);
+  if (liveHistory.length !== discards.length || liveHistory.some((record, index) => record.tile.id !== discards[index]?.id)) return false;
   if (!Object.values(value.turnContext.layoffCountByMeldId).every((count) => typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 && count <= 2)) return false;
   if (!value.turnContext.openingMeldIds.every((id) => typeof id === 'string' && tableMelds.some((meld) => meld.id === id))) return false;
   if (tableMelds.some((meld) => !players.some((player) => player.id === meld.ownerId))) return false;
@@ -189,6 +202,17 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
     if (roundEndReason === 'finish' && settlement.finishStyle === undefined) return false;
     if (roundEndReason === 'wall_exhausted' && settlement.finishStyle !== undefined) return false;
     if (players.some((player) => settlement.entries.find((entry) => entry.playerId === player.id)?.delta !== player.roundScore)) return false;
+    const expectedSettlement = roundEndReason === 'wall_exhausted'
+      ? settleRound(value as unknown as GameState, { reason: 'wall_exhausted' })
+      : settleRound(value as unknown as GameState, {
+        reason: 'finish',
+        winnerId: winnerId ?? '',
+        discard: discards.at(-1) ?? value.indicatorTile,
+        melds: settlement.finishStyle === 'seven_pairs'
+          ? Array.from({ length: 7 }, () => ({ kind: 'pair' as const, tileIds: [] }))
+          : [],
+      });
+    if (!sameSettlement(settlement, expectedSettlement)) return false;
   } else if (roundEndReason !== undefined || winnerId !== undefined || value.settlement !== undefined) return false;
 
   const commandIdsValid = commandIds.every((id) => typeof id === 'string'
@@ -202,7 +226,11 @@ function isGameState(value: unknown, identity: MatchIdentity): value is GameStat
     ...tableMelds.flatMap((meld) => meld.tiles),
     ...players.flatMap((player) => player.rack),
   ];
-  return tiles.length === 106 && new Set(tiles.map((tile) => tile.id)).size === 106;
+  if (tiles.length !== 106 || new Set(tiles.map((tile) => tile.id)).size !== 106) return false;
+  if (value.indicatorTile.kind !== 'normal'
+    || value.indicatorTile.color !== value.indicator.color
+    || value.indicatorTile.number !== value.indicator.number) return false;
+  return true;
 }
 
 export function encodeOfflineMatch(game: GameState): string {

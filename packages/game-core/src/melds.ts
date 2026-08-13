@@ -30,14 +30,16 @@ function validateSequence(values: readonly (TileValue | 'joker')[], allowHighAce
   if (allowHighAceWrap && numbers.includes(1) && numbers.includes(13) && !numbers.includes(2)) {
     variants.push(numbers.map((number) => (number === 1 ? 14 : number)).sort((left, right) => left - right));
   }
+  const validScores: number[] = [];
   for (const candidate of variants) {
     for (let start = 1; start <= 15 - values.length; start += 1) {
       const range = new Set(Array.from({ length: values.length }, (_, offset) => start + offset));
       if (candidate.every((number) => range.has(number)) && values.length - candidate.length === jokerCount) {
-        return Array.from(range).reduce((sum, number) => sum + (number === 14 ? 1 : number), 0);
+        validScores.push(Array.from(range).reduce((sum, number) => sum + (number === 14 ? 1 : number), 0));
       }
     }
   }
+  if (validScores.length > 0) return Math.max(...validScores);
   throw new GameRuleError('invalid_sequence', 'Tiles cannot form a non-wrapping sequence');
 }
 

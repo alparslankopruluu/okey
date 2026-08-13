@@ -1,7 +1,8 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { playDeterministicBotTurn } from '@luma/game-core';
+import { createGame, playDeterministicBotTurn } from '@luma/game-core';
 import worker from '../src/index';
+import { parseSnapshot } from '../src/room-session';
 
 function request(path: string, userId: string, body?: unknown): Request {
   const init: RequestInit = {
@@ -13,6 +14,20 @@ function request(path: string, userId: string, body?: unknown): Request {
 }
 
 describe('authoritative room Durable Object', () => {
+  it('rejects persisted snapshots whose tile face does not match its canonical identity', () => {
+    const state = createGame({ gameId: 'shape-probe', variant: 'classic', playerIds: ['p0', 'p1', 'p2', 'p3'], seed: 71 });
+    const firstWallTile = state.wall[0];
+    if (firstWallTile === undefined) throw new Error('Expected wall tile');
+    const tamperedState = { ...state, wall: [{ ...firstWallTile, number: firstWallTile.number === 13 ? 12 : 13 }, ...state.wall.slice(1)] };
+    const tampered = {
+      roomId: 'shape-probe',
+      state: tamperedState,
+      seats: { u0: 'p0' },
+      updatedAt: 1,
+    };
+    expect(() => parseSnapshot(JSON.stringify(tampered))).toThrow(/invalid/);
+  });
+
   it('isolates rooms, assigns four seats, and rejects a fifth player', async () => {
     const room = env.ROOMS.getByName('room-a');
     const initialized = await room.init({ roomId: 'room-a', hostUserId: 'u0', variant: 'classic', seed: 11 });
@@ -75,5 +90,21 @@ describe('authoritative room Durable Object', () => {
     expect(collision.ok).toBe(false);
     if (collision.ok) throw new Error('Expected gift receipt collision');
     expect(collision.message).toMatch(/another payload/);
+  });
+
+  it('accepts the private Firebase receipt bridge only with its configured bearer token', async () => {
+    const room = env.ROOMS.getByName('bridge-room');
+    await room.init({ roomId: 'bridge-room', hostUserId: 'alice', variant: 'classic', seed: 18 });
+    await room.join('bob');
+    const receipt = { receiptId: 'receipt_bridge_1', roomId: 'bridge-room', senderId: 'alice', recipientId: 'bob', giftId: 'tea', chipCost: 50, createdAt: 1_786_512_000_000 };
+    const unauthorized = await worker.fetch(new Request('https://local.test/internal/v1/rooms/bridge-room/gift-receipts', { method: 'POST', body: JSON.stringify(receipt) }), env);
+    expect(unauthorized.status).toBe(403);
+    const authorizedRequest = () => new Request('https://local.test/internal/v1/rooms/bridge-room/gift-receipts', {
+      method: 'POST', headers: { Authorization: 'Bearer local-test-gift-bridge-token', 'Content-Type': 'application/json' }, body: JSON.stringify(receipt),
+    });
+    expect(await worker.fetch(authorizedRequest(), env)).toMatchObject({ status: 200 });
+    const replay = await worker.fetch(authorizedRequest(), env);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({ published: false });
   });
 });

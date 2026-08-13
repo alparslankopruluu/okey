@@ -24,7 +24,8 @@ function finishStyle(state: GameState, winnerId: string, discard: Tile, melds: r
     if (melds.length === 7 && melds.every((meld) => meld.kind === 'pair')) return 'seven_pairs';
     return jokerFinish ? 'joker' : 'normal';
   }
-  if (!winner.opened) return jokerFinish ? 'hand_joker' : 'hand';
+  const nobodyElseOpened = state.players.every((player) => player.id === winnerId || !player.opened);
+  if (!winner.opened && nobodyElseOpened) return jokerFinish ? 'hand_joker' : 'hand';
   if (winner.openingMode === 'pairs') return jokerFinish ? 'pairs_joker' : 'pairs';
   return jokerFinish ? 'joker' : 'normal';
 }
@@ -47,7 +48,9 @@ export function settleRound(
       winnerIds,
       entries: state.players.map((player) => ({
         playerId: player.id,
-        delta: state.variant === '101' ? (player.penalties ?? 0) : 0,
+        delta: state.variant === '101'
+          ? (player.opened ? rackPenaltyScore101(player.rack, state) : 202) + (player.penalties ?? 0)
+          : (player.penalties ?? 0),
         deadwood: state.variant === '101' ? rackPenaltyScore101(player.rack, state) : rackFaceScore(player.rack, state),
         opened: player.opened,
         winner: winnerIds.includes(player.id),
@@ -97,7 +100,7 @@ export function settleRound(
         const pairLoserMultiplier = player.openingMode === 'pairs' ? 2 : 1;
         delta = deadwood * pairLoserMultiplier * baseMultiplier * jokerMultiplier;
       }
-      return { playerId: player.id, delta, deadwood, opened: player.opened, winner, penalties: player.penalties ?? 0 };
+      return { playerId: player.id, delta: delta + (player.penalties ?? 0), deadwood, opened: player.opened, winner, penalties: player.penalties ?? 0 };
     }),
   };
 }

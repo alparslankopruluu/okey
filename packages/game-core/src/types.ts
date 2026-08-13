@@ -80,7 +80,7 @@ export interface MatchConfig {
   readonly openingThresholdMode: 'fixed' | 'progressive';
   readonly roundCount: 1 | 2 | 3 | 4;
   readonly assistanceMode: 'assisted' | 'unassisted';
-  readonly economyMode: 'casual' | 'mock_stake_100';
+  readonly economyMode: 'casual' | 'mock_stake_100' | 'mock_stake_500' | 'mock_stake_1000';
 }
 
 export interface MatchRoundSummary {

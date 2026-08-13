@@ -1,12 +1,69 @@
 import { DurableObject } from 'cloudflare:workers';
-import { GameRuleError, applyCommand, createGame, type GameCommand } from '@luma/game-core';
+import { GameRuleError, applyCommand, createGame, createTileSet, type GameCommand, type GameState } from '@luma/game-core';
 import type { CreateRoomInput, Env, GiftPublishResult, GiftPublishRpcResult, RoomRpcResult, RoomSnapshot, SocketAttachment, SubmitCommandInput, VerifiedGiftReceipt } from './types';
 
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const GIFT_COSTS = { tea: 50, coffee: 100, chocolate: 150, rose: 250, prayer_beads: 400, cake: 1000 } as const;
 
-function parseSnapshot(raw: string): RoomSnapshot {
-  return JSON.parse(raw) as RoomSnapshot;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function tileSignature(value: Record<string, unknown>): string {
+  return JSON.stringify([value.id, value.kind, value.copy, value.color ?? null, value.number ?? null]);
+}
+
+function tileIds(value: unknown, canonicalTiles: ReadonlyMap<string, string>): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids: string[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.id !== 'string') return undefined;
+    const signature = tileSignature(item);
+    if (canonicalTiles.get(item.id) !== signature) return undefined;
+    ids.push(item.id);
+  }
+  return ids;
+}
+
+export function parseSnapshot(raw: string): RoomSnapshot {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isRecord(parsed) || typeof parsed.roomId !== 'string' || typeof parsed.updatedAt !== 'number' || !isRecord(parsed.seats)) {
+    throw new Error('Stored room snapshot is invalid');
+  }
+  const seatEntries = Object.entries(parsed.seats);
+  if (seatEntries.some(([, playerId]) => typeof playerId !== 'string')) throw new Error('Stored room snapshot is invalid');
+  const state = parsed.state;
+  if (!isRecord(state)
+    || state.gameId !== parsed.roomId
+    || typeof state.sequence !== 'number'
+    || !Number.isSafeInteger(state.sequence)
+    || !Array.isArray(state.players)
+    || state.players.length !== 4
+    || !Array.isArray(state.tableMelds)
+    || !isRecord(state.indicatorTile)) throw new Error('Stored room snapshot is invalid');
+  const canonicalTiles = new Map(createTileSet().map((tile) => [tile.id, tileSignature(tile as unknown as Record<string, unknown>)]));
+  const wallIds = tileIds(state.wall, canonicalTiles);
+  const discardIds = tileIds(state.discards, canonicalTiles);
+  const rackCollections = state.players.map((player) => isRecord(player) ? tileIds(player.rack, canonicalTiles) : undefined);
+  const tableCollections = state.tableMelds.map((meld) => isRecord(meld) ? tileIds(meld.tiles, canonicalTiles) : undefined);
+  const rackIds = rackCollections.flatMap((ids) => ids ?? []);
+  const tableIds = tableCollections.flatMap((ids) => ids ?? []);
+  if (wallIds === undefined || discardIds === undefined
+    || rackCollections.some((ids) => ids === undefined)
+    || tableCollections.some((ids) => ids === undefined)
+    || typeof state.indicatorTile.id !== 'string'
+    || canonicalTiles.get(state.indicatorTile.id) !== tileSignature(state.indicatorTile)) throw new Error('Stored room snapshot is invalid');
+  const ids = [state.indicatorTile.id, ...wallIds, ...discardIds, ...rackIds, ...tableIds];
+  const canonical = new Set(canonicalTiles.keys());
+  if (ids.length !== canonical.size || new Set(ids).size !== canonical.size || ids.some((id) => !canonical.has(id))) {
+    throw new Error('Stored room snapshot violates tile conservation');
+  }
+  return {
+    roomId: parsed.roomId,
+    state: state as unknown as GameState,
+    seats: Object.fromEntries(seatEntries) as Record<string, string>,
+    updatedAt: parsed.updatedAt,
+  };
 }
 
 function safeId(value: string, label: string): string {

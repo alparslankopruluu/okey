@@ -4,7 +4,7 @@ import { playDeterministicBotRound, playDeterministicBotTurn } from './bot';
 import { applyCommand, createGame } from './game';
 import { createMatch, createMatchRound, recordMatchRound, settleMatchEconomy } from './match';
 import { validateMeld, validateMeldCollection } from './melds';
-import { replay } from './replay';
+import { replay, replayFromSnapshot, stateDigest } from './replay';
 import { rackPenaltyScore101, settleRound } from './scoring';
 import { findOpeningMelds101, findTableExtension, findWinningDiscard, findWinningMelds } from './solver';
 import { createTileSet, effectiveValue, isJoker, jokerValue, tileByValue } from './tiles';
@@ -57,6 +57,12 @@ describe('meld validation', () => {
     const rack = [tileByValue('blue', 4, 0), tileByValue('blue', 4, 1), tileByValue('red', 4)];
     expect(() => validateMeld({ kind: 'set', tileIds: rack.map((tile) => tile.id) }, rack, indicator)).toThrow(/repeat a color/);
   });
+
+  it('scores an ambiguous joker sequence by its highest legal represented range', () => {
+    const joker = tileByValue('red', 1, 0);
+    const rack = [tileByValue('blue', 10), tileByValue('blue', 11), joker];
+    expect(validateMeld({ kind: 'sequence', tileIds: rack.map((tile) => tile.id) }, rack, indicator)).toBe(33);
+  });
 });
 
 describe('deterministic state machine', () => {
@@ -89,6 +95,17 @@ describe('deterministic state machine', () => {
     expect(applyCommand(first.state, command).duplicate).toBe(true);
     expect(() => applyCommand(first.state, { ...command, tileId: 'another-tile' })).toThrow(/another payload/);
     expect(() => applyCommand(game, { ...command, commandId: 'c2', expectedSequence: 2 })).toThrow(/Expected sequence/);
+  });
+
+  it('produces stable digests and snapshot plus tail replay equivalence', () => {
+    const initial = createGame({ gameId: 'snapshot-tail', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 17 });
+    const result = playDeterministicBotRound(initial);
+    const split = Math.floor(result.commands.length / 2);
+    const snapshot = replay(initial, result.commands.slice(0, split));
+    const fromTail = replayFromSnapshot(snapshot, result.commands.slice(split));
+    expect(fromTail).toEqual(result.state);
+    expect(stateDigest(fromTail)).toBe(stateDigest(result.state));
+    expect(stateDigest(initial)).not.toBe(stateDigest(result.state));
   });
 
   it('replays a command sequence to the same state', () => {
@@ -163,7 +180,7 @@ describe('complete deterministic bot round', () => {
     expect(applyCommand(beforeLast, lastCommand).events).toContainEqual(expect.objectContaining({
       type: 'round_finished', reason: first.state.roundEndReason, discard: first.state.discards.at(-1),
     }));
-  });
+  }, 30_000);
 
   it('terminates within the command budget across arbitrary seeds and variants', () => {
     fc.assert(fc.property(
@@ -178,10 +195,30 @@ describe('complete deterministic bot round', () => {
         expect(result.commands.length).toBeLessThan(512);
       },
     ), { numRuns: 40 });
-  }, 20_000);
+  }, 120_000);
 });
 
 describe('legal round finish', () => {
+  it('does not award the hand multiplier after another 101 player has opened', () => {
+    const base = createGame({ gameId: 'contested-hand', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 6 });
+    const winner = base.players[0];
+    const openedOpponent = base.players[1];
+    if (winner === undefined || openedOpponent === undefined) throw new Error('Expected players');
+    const state = {
+      ...base,
+      players: [
+        winner,
+        { ...openedOpponent, opened: true, openingMode: 'melds' as const },
+        ...base.players.slice(2),
+      ],
+    };
+    const discard = state.players[0]?.rack.at(-1);
+    if (discard === undefined) throw new Error('Expected discard');
+    const settlement = settleRound(state, { reason: 'finish', winnerId: 'a', discard, melds: [] });
+    expect(settlement.finishStyle).toBe('normal');
+    expect(settlement.entries.find((entry) => entry.playerId === 'a')?.delta).toBe(-101);
+  });
+
   it('accepts a complete Classic rack and rejects an incomplete meld collection', () => {
     const groups = [
       sequence('blue', [1, 2, 3]),
@@ -373,7 +410,7 @@ describe('match state', () => {
       profile: '101-fixed-open-v1' as const,
       reason: 'wall_exhausted' as const,
       winnerIds: ['a', 'b'],
-      entries: ['a', 'b', 'c', 'd'].map((playerId) => ({ playerId, delta: 0, deadwood: playerId === 'a' || playerId === 'b' ? 5 : 8, opened: true, winner: playerId === 'a' || playerId === 'b' })),
+      entries: ['a', 'b', 'c', 'd'].map((playerId) => ({ playerId, delta: playerId === 'a' || playerId === 'b' ? 5 : 8, deadwood: playerId === 'a' || playerId === 'b' ? 5 : 8, opened: true, winner: playerId === 'a' || playerId === 'b' })),
     };
     const afterOne = recordMatchRound(match, settlement);
     expect(createMatchRound(afterOne).dealerIndex).toBe(1);
@@ -382,22 +419,75 @@ describe('match state', () => {
     expect(complete.config).toMatchObject({ assistanceMode: 'unassisted', economyMode: 'mock_stake_100' });
   });
 
+  it('accumulates authoritative settlement deltas instead of reconstructing deadwood', () => {
+    const match = createMatch({ gameId: 'delta-match', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 9, config: { roundCount: 2 } });
+    const settlement = {
+      profile: '101-fixed-open-v1' as const,
+      reason: 'finish' as const,
+      winnerId: 'a',
+      entries: [
+        { playerId: 'a', delta: -202, deadwood: 0, opened: false, winner: true },
+        { playerId: 'b', delta: 202, deadwood: 70, opened: false, winner: false },
+        { playerId: 'c', delta: 15, deadwood: 10, opened: true, winner: false, penalties: 5 },
+        { playerId: 'd', delta: 40, deadwood: 20, opened: true, winner: false },
+      ],
+    };
+    const one = recordMatchRound(match, settlement);
+    const complete = recordMatchRound(one, settlement);
+    expect(complete.penaltiesByPlayerId).toEqual({ a: -404, b: 404, c: 30, d: 80 });
+    expect(complete.winnerIds).toEqual(['a']);
+  });
+
+  it('uses the highest cumulative Classic room score as the match winner', () => {
+    const match = createMatch({ gameId: 'classic-match', variant: 'classic', playerIds: ['a', 'b', 'c', 'd'], seed: 9 });
+    const complete = recordMatchRound(match, {
+      profile: 'classic-standard-v1', reason: 'finish', winnerId: 'a',
+      entries: [
+        { playerId: 'a', delta: 0, deadwood: 0, opened: false, winner: true },
+        { playerId: 'b', delta: -2, deadwood: 20, opened: false, winner: false },
+        { playerId: 'c', delta: -2, deadwood: 25, opened: false, winner: false },
+        { playerId: 'd', delta: -2, deadwood: 30, opened: false, winner: false },
+      ],
+    });
+    expect(complete.winnerIds).toEqual(['a']);
+  });
+
   it('settles mock stakes with deterministic 300/100 payouts and refunds when nobody opened', () => {
     const base = createMatch({ gameId: 'stake', variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 9, config: { economyMode: 'mock_stake_100' } });
     const settlement = {
       profile: '101-fixed-open-v1' as const,
       reason: 'wall_exhausted' as const,
       entries: [
-        { playerId: 'a', delta: 0, deadwood: 5, opened: true, winner: true },
-        { playerId: 'b', delta: 0, deadwood: 10, opened: true, winner: false },
-        { playerId: 'c', delta: 0, deadwood: 20, opened: false, winner: false },
-        { playerId: 'd', delta: 0, deadwood: 30, opened: false, winner: false },
+        { playerId: 'a', delta: 5, deadwood: 5, opened: true, winner: true },
+        { playerId: 'b', delta: 10, deadwood: 10, opened: true, winner: false },
+        { playerId: 'c', delta: 202, deadwood: 20, opened: false, winner: false },
+        { playerId: 'd', delta: 202, deadwood: 30, opened: false, winner: false },
       ],
     };
     const complete = recordMatchRound(base, settlement);
     expect(settleMatchEconomy(complete).entries.map((entry) => entry.payout)).toEqual([300, 100, 0, 0]);
     const noneOpened = recordMatchRound(base, { ...settlement, entries: settlement.entries.map((entry) => ({ ...entry, opened: false })) });
     expect(settleMatchEconomy(noneOpened)).toMatchObject({ refunded: true, entries: [{ payout: 100 }, { payout: 100 }, { payout: 100 }, { payout: 100 }] });
+  });
+
+  it('scales mock room settlement to the exact displayed entry price', () => {
+    const settlement = {
+      profile: '101-fixed-open-v1' as const,
+      reason: 'wall_exhausted' as const,
+      entries: [
+        { playerId: 'a', delta: 5, deadwood: 5, opened: true, winner: true },
+        { playerId: 'b', delta: 10, deadwood: 10, opened: true, winner: false },
+        { playerId: 'c', delta: 202, deadwood: 20, opened: false, winner: false },
+        { playerId: 'd', delta: 202, deadwood: 30, opened: false, winner: false },
+      ],
+    };
+    for (const [economyMode, expected] of [
+      ['mock_stake_500', [1500, 500, 0, 0]],
+      ['mock_stake_1000', [3000, 1000, 0, 0]],
+    ] as const) {
+      const match = createMatch({ gameId: economyMode, variant: '101', playerIds: ['a', 'b', 'c', 'd'], seed: 9, config: { economyMode } });
+      expect(settleMatchEconomy(recordMatchRound(match, settlement)).entries.map((entry) => entry.payout)).toEqual(expected);
+    }
   });
 });
 

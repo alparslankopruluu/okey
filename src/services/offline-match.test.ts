@@ -21,6 +21,23 @@ describe('offline match persistence', () => {
     expect(decodeOfflineMatch(JSON.stringify(duplicate), identity)).toBeUndefined();
   });
 
+  it('rejects forged tile identities, indicator mismatch, and discard provenance drift', () => {
+    const forgedTile = { ...game, wall: [{ ...game.wall[0], id: 'forged' }, ...game.wall.slice(1)] };
+    const wrongIndicator = { ...game, indicator: { color: 'blue', number: 7 } };
+    const liveDiscard = game.players[0]?.rack[0];
+    if (liveDiscard === undefined) throw new Error('Expected tile');
+    const withDiscard = {
+      ...game,
+      players: game.players.map((player, index) => index === 0 ? { ...player, rack: player.rack.filter((tile) => tile.id !== liveDiscard.id) } : player),
+      discards: [liveDiscard],
+      discardHistory: [{ tile: liveDiscard, playerId: 'p0', sequence: 2 }],
+    };
+    const wrongLiveDiscard = { ...withDiscard, discardHistory: [{ ...withDiscard.discardHistory[0], pickedBy: 'p1' }] };
+    expect(decodeOfflineMatch(JSON.stringify(forgedTile), identity)).toBeUndefined();
+    expect(decodeOfflineMatch(JSON.stringify(wrongIndicator), identity)).toBeUndefined();
+    expect(decodeOfflineMatch(JSON.stringify(wrongLiveDiscard), identity)).toBeUndefined();
+  });
+
   it('round-trips a wall-exhausted completed round', () => {
     const completed = playDeterministicBotRound(game).state;
     expect(completed.roundEndReason).toBeDefined();
@@ -77,7 +94,16 @@ describe('offline match persistence', () => {
         entries: completed.settlement.entries.map((entry, index) => index === 0 ? { ...entry, playerId: 'unknown' } : entry),
       },
     };
+    const coordinatedTamper = {
+      ...completed,
+      players: completed.players.map((player, index) => index === 0 ? { ...player, roundScore: player.roundScore + 1 } : player),
+      settlement: completed.settlement === undefined ? undefined : {
+        ...completed.settlement,
+        entries: completed.settlement.entries.map((entry, index) => index === 0 ? { ...entry, delta: entry.delta + 1 } : entry),
+      },
+    };
     expect(decodeOfflineMatch(JSON.stringify({ version: 2, game: missing }), identity)).toBeUndefined();
     expect(decodeOfflineMatch(JSON.stringify({ version: 2, game: wrongScore }), identity)).toBeUndefined();
+    expect(decodeOfflineMatch(JSON.stringify({ version: 3, game: coordinatedTamper }), identity)).toBeUndefined();
   });
 });

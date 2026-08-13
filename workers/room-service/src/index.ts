@@ -16,8 +16,19 @@ export default {
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();
     const url = new URL(request.url);
+    const giftMatch = /^\/internal\/v1\/rooms\/([a-zA-Z0-9_-]{1,64})\/gift-receipts$/.exec(url.pathname);
     const match = /^\/v1\/rooms\/([a-zA-Z0-9_-]{1,64})(?:\/(socket|join|command))?$/.exec(url.pathname);
     try {
+      if (giftMatch !== null) {
+        if (request.method !== 'POST') return jsonError('Method not allowed', 405);
+        const expectedToken = env.GIFT_BRIDGE_TOKEN;
+        if (expectedToken === undefined || request.headers.get('Authorization') !== `Bearer ${expectedToken}`) return jsonError('Forbidden', 403);
+        const roomId = giftMatch[1];
+        if (roomId === undefined) return jsonError('Invalid room ID', 400);
+        const body = await request.json();
+        const result = await env.ROOMS.getByName(roomId).tryPublishGiftReceipt(body as never);
+        return result.ok ? Response.json(result.result) : jsonError(result.message, 400);
+      }
       if (match === null) return jsonError('Not found', 404);
       const roomId = match[1];
       const action = match[2];

@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
+      miniflare: { bindings: { GIFT_BRIDGE_TOKEN: 'local-test-gift-bridge-token' } },
     }),
   ],
 });

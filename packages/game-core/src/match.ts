@@ -75,11 +75,14 @@ export function recordMatchRound(
   };
   const penaltiesByPlayerId = { ...match.penaltiesByPlayerId };
   for (const entry of settlement.entries) {
-    penaltiesByPlayerId[entry.playerId] = (penaltiesByPlayerId[entry.playerId] ?? 0) + entry.deadwood + (entry.penalties ?? 0);
+    penaltiesByPlayerId[entry.playerId] = (penaltiesByPlayerId[entry.playerId] ?? 0) + entry.delta;
   }
   const completedRounds = [...match.completedRounds, round];
   const completed = completedRounds.length === match.config.roundCount;
-  const minimum = completed ? Math.min(...match.playerIds.map((id) => penaltiesByPlayerId[id] ?? 0)) : undefined;
+  const totals = match.playerIds.map((id) => penaltiesByPlayerId[id] ?? 0);
+  const winningTotal = completed
+    ? match.variant === 'classic' ? Math.max(...totals) : Math.min(...totals)
+    : undefined;
   return {
     ...match,
     completedRounds,
@@ -90,7 +93,7 @@ export function recordMatchRound(
     ...((opening?.pairsCount ?? match.lastSuccessfulPairsOpeningCount) === undefined ? {} : {
       lastSuccessfulPairsOpeningCount: opening?.pairsCount ?? match.lastSuccessfulPairsOpeningCount,
     }),
-    winnerIds: minimum === undefined ? [] : match.playerIds.filter((id) => penaltiesByPlayerId[id] === minimum),
+    winnerIds: winningTotal === undefined ? [] : match.playerIds.filter((id) => penaltiesByPlayerId[id] === winningTotal),
   };
 }
 
@@ -100,29 +103,32 @@ export function settleMatchEconomy(match: MatchState): MatchEconomySettlement {
   if (match.config.economyMode === 'casual') {
     return { mode: 'casual', refunded: false, entries: match.playerIds.map((playerId) => ({ playerId, stake: 0, payout: 0, net: 0, eligible: true })) };
   }
-  const stake = 100;
-  const eligible = match.playerIds.filter((playerId) => match.completedRounds.some((round) => round.settlement.entries.some((entry) => entry.playerId === playerId && entry.opened)));
+  const stake = Number(match.config.economyMode.slice('mock_stake_'.length));
+  if (![100, 500, 1000].includes(stake)) throw new Error('Unsupported mock stake');
+  const eligible = match.variant === 'classic'
+    ? [...match.playerIds]
+    : match.playerIds.filter((playerId) => match.completedRounds.some((round) => round.settlement.entries.some((entry) => entry.playerId === playerId && entry.opened)));
   if (eligible.length === 0) {
-    return { mode: 'mock_stake_100', refunded: true, entries: match.playerIds.map((playerId) => ({ playerId, stake, payout: stake, net: 0, eligible: false })) };
+    return { mode: match.config.economyMode, refunded: true, entries: match.playerIds.map((playerId) => ({ playerId, stake, payout: stake, net: 0, eligible: false })) };
   }
   const ranked = [...eligible].sort((left, right) => (match.penaltiesByPlayerId[left] ?? 0) - (match.penaltiesByPlayerId[right] ?? 0) || left.localeCompare(right, 'en'));
   const payouts = new Map<string, number>();
   if (ranked.length === 1) {
-    payouts.set(ranked[0] ?? '', 400);
+    payouts.set(ranked[0] ?? '', stake * 4);
   } else {
     const firstScore = match.penaltiesByPlayerId[ranked[0] ?? ''] ?? 0;
     const firstTie = ranked.filter((id) => (match.penaltiesByPlayerId[id] ?? 0) === firstScore);
     if (firstTie.length > 1) {
-      distributePool(payouts, firstTie, 400);
+      distributePool(payouts, firstTie, stake * 4);
     } else {
-      payouts.set(ranked[0] ?? '', 300);
+      payouts.set(ranked[0] ?? '', stake * 3);
       const secondScore = match.penaltiesByPlayerId[ranked[1] ?? ''] ?? 0;
       const secondTie = ranked.slice(1).filter((id) => (match.penaltiesByPlayerId[id] ?? 0) === secondScore);
-      distributePool(payouts, secondTie, 100);
+      distributePool(payouts, secondTie, stake);
     }
   }
   return {
-    mode: 'mock_stake_100',
+    mode: match.config.economyMode,
     refunded: false,
     entries: match.playerIds.map((playerId) => {
       const payout = payouts.get(playerId) ?? 0;

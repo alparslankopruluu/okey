@@ -3,6 +3,7 @@ import type { RoomSession } from './room-session';
 
 export interface Env {
   ROOMS: DurableObjectNamespace<RoomSession>;
+  GIFT_BRIDGE_TOKEN?: string;
 }
 
 export interface RoomSnapshot {
