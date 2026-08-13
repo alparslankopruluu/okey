@@ -172,3 +172,44 @@ edge, and a center suitable for responsive stretching.
   `4a2b89cb16b2b8ae8fd80ceec298ae49f779d89be2881822aa29b6dd28b90c6e`,
   `86905d6824bc79000d500f667593c1e7fb33f57e53f57396b4654d6ace548b39`,
   `45fd47ef3ffcd58953d8fcfea6c5dc95c2c05b51e74893b6c0c2aa3312e5edf1`.
+
+## 2026-08-13 optional Kahvehane theme set
+
+The built-in ChatGPT Images generator created this optional theme from text only.
+It is a complementary Luma atmosphere, not a replacement for the original
+midnight/pearl identity. No user screenshot, competitor image, logo, brand, tile
+number, or gameplay symbol was supplied to the generator. Gameplay faces remain
+deterministic React Native UI.
+
+| Asset | File | SHA-256 | Runtime role |
+|---|---|---|---|
+| Kahvehane style frame | `assets/concepts/kahvehane/kahvehane-style-frame-v1.png` | `14bcb7a35b1671277f3339b7415205a8a92c0ca6378a8a9e9e73381c11b1eb1f` | Warm, restrained coffeehouse art-direction and optional table backdrop |
+| Empty walnut rack | `assets/game/themes/kahvehane/kahvehane-rack-v1.png` | `98fc343dcee95ed2256a5c4c7f2a3ba004be85a81623e79e56b8f6471e5dff65` | Transparent two-shelf runtime rack; 21/22 tiles remain responsive and scrollable |
+| White tile material study | `assets/concepts/kahvehane/kahvehane-tile-materials-v1.png` | `446440f2ea03ccce0d51988e56099bd80dab30e745ea2551cf661166c689e58f` | Non-runtime reference for ivory resin, patina, bevel and recess |
+
+### Kahvehane prompts
+
+Style frame prompt: create one original, calm and authentic Turkish neighborhood
+coffeehouse Okey scene at blue hour, with a polished walnut table, four empty wooden
+two-tier racks, a blank ivory wall, tea glasses and warm brass lamps. Keep a wide
+slight top-down camera and generous responsive safe space. Use realistic materials
+with restrained Luma aqua/lilac reflections. No people, smoke, text, logo, brand,
+currency, casino imagery, green felt, numbered tiles, copied venue, or watermark.
+
+Rack prompt: create one isolated, empty, symmetric, wide two-tier walnut Okey rack,
+straight-on with slight top-down perspective, clear upper and lower shelves, raised
+rails and small satin-brass end details. Preserve a broad uniform center suitable for
+nine-slice responsive stretching. Transparent background; no tiles, text, number,
+symbol, logo, brand, currency, casino cue, table, hand, or watermark.
+
+Tile-material prompt: create a 3-by-2 studio sheet of six isolated blank white/ivory
+Okey tile faces, mixing clean resin and subtly aged coffeehouse resin. Each tile has
+a shallow circular suit recess but no glyph. Exact front view, matching proportions,
+soft bevel and tactile micro-wear. Transparent background; no number, symbol, text,
+logo, brand, currency, casino cue, rack, hand, or watermark.
+
+Selection rationale: the rack has continuous grain and two unambiguous shelves; the
+tile study adds physical warmth without sacrificing code-drawn readability; and the
+environment reads as a real social coffeehouse without reproducing casino UI or a
+competitor's trade dress. Release review must still check accidental marks and
+small-screen contrast.

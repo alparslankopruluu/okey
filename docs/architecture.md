@@ -40,16 +40,17 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 - `Tile`, `Rack`, `Meld`, `TableMeld`, `GameVariant`, `GameState`, `GameCommand`, `GameEvent`, and `RoundSettlement` are immutable serializable types. A completed state records `roundEndReason` as either a legal finish or wall exhaustion; only a legal finish has `winnerId`.
 - Commands are validated by one pure reducer. Opening and layoff commands move the exact physical tiles from a rack into owned table melds; terminal commands also attach per-player settlement entries.
 - The exact-cover solver discovers a canonical winning partition independent of UI/rack order. The same helper drives the bot and changes the user’s selected-discard action to a legal finish when the remainder is complete.
-- Seeded PRNG controls shuffle and bot tie-breaking. Replay is `(initial seed + ordered commands/events)`.
+- Seeded PRNG controls shuffle and bot tie-breaking. Replay is `(initial seed + ordered commands/events)`; a portable canonical state digest and snapshot-plus-tail replay prove reconnect equivalence without treating the digest as a security MAC.
 - The deterministic bot-round runner is bounded to 512 commands. Bots attempt legal finish, 101 opening, table layoff, and finish again before choosing a discard. If nobody can finish, the final discard after the last wall draw closes the round as a draw instead of leaving the next player on an empty source.
 - Wall-clock time enters only as explicit command metadata; game rules never read ambient time.
-- Zustand owns UI preferences/session projection, never authoritative rules or wallet balance.
+- Zustand owns UI preferences/session projection, selected Luma/Kahvehane atmosphere, and a clearly local mock balance projection; it never owns authoritative rules or a connected wallet balance.
+- Room discovery uses an immutable local catalog during the mock/provider-off phase. Level and balance produce view-only access states; production purchased-chip room authority remains server/feature-flag gated.
 
 ## Online protocol
 
 - Worker routes local-auth room requests and upgrades WebSockets to a room Durable Object; production Firebase token verification remains gated.
 - One SQLite-backed Durable Object is authoritative per room. It stores the latest serializable snapshot and the game state’s bounded processed-command fingerprints.
-- Verified Firebase gift receipts have a separate private RPC ingestion path: the room persists the full receipt before one broadcast, treats an identical replay as a no-op, and rejects receipt-ID collisions. No public/mobile HTTP route exposes this RPC; the production Firebase-to-Cloudflare bridge remains a gated deployment task.
+- Verified Firebase gift receipts have a private bearer-authenticated HTTP-to-RPC ingestion path: a Firestore trigger forwards only the verified receipt to the Worker, the room persists the full receipt before one broadcast, treats an identical replay as a no-op, and rejects receipt-ID collisions. The bridge URL/token are Secret Manager inputs and production deployment remains a separate approval gate.
 - Each implemented command includes a command ID, authenticated seat/player ID, expected sequence, and typed payload.
 - The object rejects malformed, idempotency-colliding, out-of-turn, stale-sequence, or unauthorized commands; successful state is persisted before broadcast.
 - Reconnect currently sends the latest full snapshot. Delta/event-cursor resume is a release-readiness backlog item. A 24-hour alarm expires abandoned rooms and closes sockets.
@@ -83,6 +84,13 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 ## Performance and motion
 
 - Reanimated worklets own gestures/short state transitions; Skia draws the 2.5D table and deterministic tile faces.
+- Wall pickup recognizes a directional drop toward the rack (down in portrait, right in
+  landscape) and keeps a labelled tap fallback. Rack movement resolves horizontal/row
+  displacement to a stable two-shelf order; physical tile identities never leave game core.
+- The local social authority persists gift receipt history in Zustand so cooldown/hour/day
+  limits survive route remounts. Room route parameters carry an allowlisted entry-chip tier;
+  core settlement scales the mock-only pool to that exact tier and the store applies each
+  match result once by stable match ID.
 - React state does not update per animation frame. Asset textures are bounded and preloaded.
 - Standard target is 60 FPS; device heuristics can select controlled 30 FPS, fewer particles, simpler shadows, and no parallax.
 - Reduced Motion replaces deal/discard travel and depth/parallax with short fades/state snaps while preserving turn feedback.

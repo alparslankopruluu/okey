@@ -22,6 +22,8 @@
 - [x] Seeded shuffle/bots produce identical results and a full offline match can finish.
 - [x] Offline match persists and resumes after app restart.
 - [x] Responsive table supports phone/tablet layout rules, portrait/landscape, reorder/draw/discard, readable tiles, Reduced Motion, and low-performance fallback.
+- [x] Bot turns pause for a readable human beat; rack reorder and wall draw support drag-and-drop while labelled tap actions remain available.
+- [x] Original Luma and optional Kahvehane table themes share deterministic horizontal tile glyphs; the Kahvehane set uses a generated transparent walnut rack and realistic ivory material reference.
 - [x] Home, offline setup, game, daily bonus, settings/music, profile/store/safety/social mock surfaces are navigable in Turkish and English.
 
 **Current acceptance evidence:** iOS 18.3 iPhone 16 Pro simulator runs the native Debug
@@ -41,21 +43,24 @@ nine-tile rack in portrait and landscape.
 
 ## M2 — Online/social/economy boundaries
 
-- [ ] Cloudflare Worker + room Durable Object validates membership, sequence, idempotency, turns, reconnect/resume, and expiry locally.
+- [x] Cloudflare Worker + room Durable Object validates membership, sequence, idempotency, turns, reconnect/resume, expiry, snapshot conservation, and verified gift receipt replay locally.
 - [ ] Four-player protocol tests cover duplicate/out-of-turn commands, reconnect, disconnect, and same-account two-device behavior.
 - [x] Firebase modular mobile adapter and local Functions/Rules cover anonymous auth, App Check, FCM device registration, profiles, friendships, notifications, and append-only gift spend; real configs remain gated.
-- [ ] Daily bonus rejects duplicates; wallet rejects negative/unauthorized/replayed writes and reconciles ledger totals.
+- [x] Daily bonus rejects duplicates; mock wallet/gift authority rejects negative and replayed spend, enforces cooldown/hour/day caps, and records append-only ledger entries. Connected wallet authority remains provider-gated.
 - [ ] Chat covers filtering, rate limit, mute/block/report, and 24-hour TTL.
 - [ ] RealtimeKit mock covers permission denial, push-to-talk, mute, reconnect, and has no recording path.
 - [ ] RevenueCat mock exposes three chip packages plus weekly/yearly VIP and idempotent purchase webhooks.
-- [ ] Chip rooms remain disabled in production config.
+- [x] Level/chip room catalog exposes casual and clearly labelled mock-stake tiers; purchased-chip production stakes remain disabled by feature flag.
+- [x] In-room gift sheet exposes recipient avatar, authoritative mock balance, affordability, explicit confirmation, and five-second cooldown in portrait and landscape.
+- [x] Mock gift cooldown/hour/day history persists across route remounts; exact room entry tiers propagate into 100/500/1,000-chip mock settlement without changing production stake gates.
 
 **Done when:** local tests prove protocol/economy/social invariants without requiring any real provider account.
 
 ## M3 — Native proof and release readiness
 
 - [x] Lint, typecheck, game-core/Worker/app tests, translation parity, Expo Doctor and local Firebase rules/policy tests pass; dependency audit risk is documented pending upstream-compatible fixes.
-- [ ] iOS and Android development builds run on simulator/emulator; accessibility, orientations, large text, reduced motion, and performance evidence recorded.
+- [x] iOS and Android development builds run on simulator/emulator; iOS portrait/both landscape directions, VoiceOver labels, gifts, bot pacing, rooms, and Kahvehane layout are recorded.
+- [ ] Large text, captured Reduced Motion interaction, Android orientation, physical-device performance, and Maestro evidence recorded.
 - [ ] Real-device voice and purchase sandbox acceptance completed after human provider setup.
 - [ ] Firebase/Cloudflare/RealtimeKit/RevenueCat dev resources created only after separate approval and verified by readback.
 - [ ] Store metadata/icon/screenshots reflect the real accepted build.

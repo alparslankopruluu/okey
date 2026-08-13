@@ -13,8 +13,8 @@
 ```text
 Launch/session restore
   ├─ Home → daily bonus → quick offline → table → result/rematch
-  └─ Home → rooms/invite → seated online room → table + chat/voice → result/rematch
-                └─ create room → Classic or 101 → casual (chip rooms disabled)
+  └─ Home → rooms/invite → level/chip filter → seated online room → table + chat/voice/gifts → result/rematch
+                └─ create room → Classic or 101 → casual or explicit mock-chip tier (production purchased-chip rooms disabled)
 Settings/profile/store/safety remain reachable without interrupting a live turn.
 ```
 
@@ -31,7 +31,7 @@ Settings/profile/store/safety remain reachable without interrupting a live turn.
 | `/game/[roomId]` **gotcha** | draw, reorder, discard, chat/PTT | active/waiting, reconnect, offline, invalid move, round end, reduced motion, low perf | deal/discard arcs, rack spring, turn halo, restrained particles | tile number/color has text/shape redundancy; 44pt targets; actions announced |
 | `/profile` | select original avatar/cosmetics and view stats | guest, synced, offline, empty stats | medallion tilt/selection | no account-only deletion controls while anonymous; readable stats |
 | `/store` | inspect mock chip/VIP products, restore | loading, unavailable, mock success/error, restore | chip stack count and one purchase confirmation | prices are provider-owned; no gameplay-advantage claim |
-| `/settings` | music/voice/motion/language/account | permission denied, no tracks, provider unavailable | immediate toggles; no ambient motion in Reduced Motion | every slider/toggle labelled; personal-music scope explained |
+| `/settings` | music/voice/motion/language/table theme/account | permission denied, no tracks, provider unavailable | immediate toggles; no ambient motion in Reduced Motion | every slider/toggle labelled; personal-music scope and Luma/Kahvehane visual-only theme explained |
 | `/safety` | mute/block/report and policy | empty, submitted, rate-limited, offline | confirmation sheet only | reason optional/accessible; emergency/legal wording not implied |
 
 ## Scope integrity

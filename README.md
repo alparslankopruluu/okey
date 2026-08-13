@@ -6,7 +6,7 @@ Luma Okey is a mobile-first, calm social implementation of Classic Okey and 101 
 
 - Blueprint and public competitor evidence: complete.
 - app-factory source: version 4.1.0, commit `db96b8675920681bb81734be2526ea67927100f4`.
-- Current gate: generate and curate five original concept asset sets before feature code.
+- Current gate: finish physical-device/accessibility performance evidence and explicitly approved dev-provider setup. Native iOS and Android development builds run locally; deterministic Classic/101, responsive portrait/both-landscape table, directional drag/tap interaction, readable bots, exact mock room tiers, social gifts, luminous assets, optional Kahvehane theme set, and provider source scaffolds are implemented.
 - Real Firebase, Cloudflare deploy, RealtimeKit, RevenueCat/store catalogs, signing, and uploads: human TODOs; not provisioned by the initial implementation.
 
 ## Intended workspace

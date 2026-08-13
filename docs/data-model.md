@@ -40,5 +40,14 @@
 | `registerDevice` | callable + App Check | server-owned FCM token metadata; token is never returned/logged |
 | `inviteToRoom` | callable + App Check | friend-only expiring room invitation + notification |
 | `spendGift` | callable + App Check | block/rate/balance/idempotency transaction and gift receipt |
+| `deliverNotification` | Firestore create trigger | allowlisted FCM data payload, chunked delivery, invalid-token cleanup |
+| `bridgeGiftReceipt` | Firestore create trigger + secrets | forward a verified receipt to the private HTTPS Worker bridge exactly once at the room boundary |
 
-All callables are source-only until the exact Firebase project/config/deploy mutation is separately approved and read back. No `.firebaserc`, native provider config, or credential is committed.
+All functions are source-only until the exact Firebase project/config/deploy mutation is separately approved and read back. The mobile adapter is runtime-gated by the presence of both ignored native Firebase config files. No `.firebaserc`, native provider config, endpoint secret, or credential is committed.
+
+## Local mock persistence (not Firestore authority)
+
+`luma-okey-preferences-v1` stores non-cash demo balance, gift receipts, blocked user IDs,
+and settled mock match IDs. This prevents navigation/remount from resetting gift limits or
+double-applying a local result. It never authorizes a connected wallet, friendship, block,
+or production chip-room write; those remain callable/server-only when Firebase is enabled.

@@ -40,8 +40,12 @@
 - Chips have no transfer, cash-out, prize, exchange, or real-world value.
 - VIP cannot improve tile distribution, rule access, score, matchmaking priority, or bot difficulty.
 - Purchased-chip stake rooms are compile/runtime feature-flagged OFF for production until documented legal and store classification approval.
+- Mock chip rooms settle completed local rounds only; they do not reserve entry chips on join. Any production stake-like room requires a server-authoritative reservation/refund lifecycle, reconnect handling, ledger idempotency, and a separate approval gate.
 - Random paid items are excluded from V1.
 - Gifts debit the sender through an idempotent `gift_spend` ledger entry and provide the recipient only animation/collection history. Cooldown, hourly/daily caps, block policy, and nonnegative balance are enforced at the authority boundary.
+- Local mock gift receipts and settled-match IDs persist only as non-cash demo state so
+  remount/replay cannot reset rate limits or double-apply a result. Connected balances and
+  blocks remain server-authoritative; local state never authorizes a production wallet write.
 - Push payloads may contain only notification type, notification ID, and safe deep-link identifiers; no chat text, rack, balance, or token.
 - Marketing never claims guaranteed winnings, favorable odds, income, or gambling equivalence.
 

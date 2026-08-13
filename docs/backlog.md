@@ -10,7 +10,7 @@
 | 2026-08-11 | Synchronized room music/DJ mode | User idea refinement | Personal music is safer/simpler in V1 |
 | 2026-08-11 | Full mobile Three.js environment | Visual exploration | Skia/Reanimated chosen for V1 performance |
 | 2026-08-11 | Spectator/replay sharing | Fairness wedge | Consider after replay privacy and room consent |
-| 2026-08-11 | Add selectable tournament/house-rule profiles and manual meld composition | Rule-engine expansion | V1 automatic legal-win discovery, source-locked settlement, table mutation, replay, persistence, and Worker authority are complete; progressive opening, claimed penalties, joker retrieval, multi-round totals, and manual per editing remain deferred |
+| 2026-08-11 | Add selectable tournament/house-rule profiles and manual meld composition | Rule-engine expansion | V1 automatic legal-win discovery, source-locked settlement, table mutation, progressive opening, multi-round totals, replay, persistence, and Worker authority are complete; claimed penalties, joker retrieval, and manual per editing remain deferred |
 | 2026-08-11 | Firebase-token Worker authentication and device/session conflict policy | Security gate | Replace local `X-Luma-User`; requires real Firebase project and provider readback |
 | 2026-08-11 | Delta reconnect/event cursor and room chat inside the Durable Object | Online hardening | Current reconnect sends a full authoritative snapshot |
 | 2026-08-11 | Licensed bundled music playback | Human/license gate | UI and mock adapter exist; no unlicensed audio ships |

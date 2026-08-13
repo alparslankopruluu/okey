@@ -1,12 +1,12 @@
-# Quality status — 2026-08-11
+# Quality status — 2026-08-13
 
 ## Verified locally
 
 - Expo Doctor: 20/20 checks passed on Expo SDK 57.
-- Translation schema: 110 keys match across Turkish and English.
+- Translation schema: Turkish and English remain mechanically key-equal; the latest count is recorded by `npm run lint:translations` at each checkpoint.
 - ESLint: app, shared source, game core, and Worker source/tests pass with zero warnings.
 - TypeScript: root app, `@luma/game-core`, and `@luma/room-service` pass strict type checks.
-- Tests: 35 app/core/service tests and 3 Workers-runtime Durable Object tests pass.
+- Tests: current suites cover game core, app/services, Worker runtime, Firebase Functions, and Firestore rules; exact counts are reported by the final validation checkpoint rather than frozen here.
 - Native iOS Debug development build succeeded with Xcode 26.6 and was installed on an
   iPhone 16 Pro simulator running iOS 18.3. The welcome screen, offline setup, seeded
   Classic table, one user discard, three deterministic bot turns, return of control to
@@ -30,6 +30,9 @@
   unauthorized-command rejection, and a complete authenticated 101 round whose table melds
   and settlement survive the SQLite snapshot.
 - Expo production exports pass for both iOS and Android. Hermes bundles are generated under ignored `dist/expo-ios` and `dist/expo-android`; this proves JavaScript/assets bundleability, not native signing or device behavior.
+  The final interaction checkpoint hashes are iOS
+  `cd42e7adfd6abc730ec14b97259b0269ae9e5cfac23f2351a9faa22c68d6357d`
+  and Android `b1f4da1198cabec54a7dea1ef4d781b1e1901f10be2320c4ad3a8402369a296e`.
 - Simulator evidence: [`ios-simulator-home-2026-08-11.png`](evidence/ios-simulator-home-2026-08-11.png),
   [`ios-simulator-offline-2026-08-11.png`](evidence/ios-simulator-offline-2026-08-11.png), and
   [`ios-simulator-offline-game-2026-08-11.png`](evidence/ios-simulator-offline-game-2026-08-11.png).
@@ -54,16 +57,40 @@
 - The first native attempt exposed an incompletely extracted local `node_modules` tree
   (missing Skia simulator and Workerd binaries). A lockfile-exact `npm ci` restored both;
   the Worker typecheck and second native build then passed without source-version changes.
+- The 2026-08-13 interaction checkpoint passes 167-key TR/EN parity, zero-warning
+  lint and strict app/core/Worker typecheck. The final run passes 67 root
+  app/core/service tests, 6 Worker runtime tests, 9 Functions tests and 4 Firestore emulator
+  rules tests, including exact 100/500/1,000 mock-room settlement and remount-resistant
+  gift cooldown/block enforcement. Expo Doctor passes 20/20.
+- A regenerated native iOS Debug build succeeds under Xcode 26.6 and launches on the
+  iPhone 16 Pro iOS 18.3 simulator. The same live match was observed in portrait and both
+  landscape directions with the Kahvehane rack, white deterministic tile faces, four
+  seat-linked last discards, real 101 table melds, all six gift cards, authoritative gift
+  balance/cooldown, and readable staged bot turns. The Android Debug development build
+  launches on the tablet emulator without the formerly observed unconfigured-Firebase crash.
+- Current Simulator evidence is recorded in
+  [`ios-kahvehane-table-landscape.png`](evidence/simulator-2026-08-13/ios-kahvehane-table-landscape.png),
+  [`ios-kahvehane-gift-landscape.png`](evidence/simulator-2026-08-13/ios-kahvehane-gift-landscape.png),
+  [`ios-rooms-level-chip.png`](evidence/simulator-2026-08-13/ios-rooms-level-chip.png),
+  [`ios-landscape-opposite-table.png`](evidence/simulator-2026-08-12/ios-landscape-opposite-table.png),
+  and [`android-tablet-development-build.png`](evidence/simulator-2026-08-13/android-tablet-development-build.png).
+- Native artifact proof: the iOS simulator executable SHA-256 is
+  `3778c47bdeeeb00510e8e797ffa08982a138f98269fd258753848ffbf4dd0fce`.
+  Android package/version/SDK and APK integrity remain recorded from the successful
+  regenerated build; neither artifact is signed or suitable for store upload.
 
 ## Open gates
 
-- Android development-build, iOS/Android physical-device, tablet/Android orientation,
-  large-text, Reduced Motion, and Maestro evidence remain open. The latest iOS simulator
-  rebuild completed with zero errors and zero warnings.
+- iOS/Android physical-device, Android orientation, large-text, a captured Reduced Motion
+  interaction recording, Maestro, and performance profiling remain open. Native iOS and
+  Android development builds themselves now pass; the iOS build contains upstream script/
+  Swift warnings but no project compile error.
 - Firebase, Cloudflare deploy, RealtimeKit, RevenueCat/store catalogs, signing, licensed music, and store uploads remain explicit human/provider TODOs.
+- Android native smoke testing caught an unconfigured App Check startup crash before handoff.
+  Mock builds now exclude RN Firebase native autolinking until the approved dev Firebase
+  config gate supplies and verifies both platform config files.
 - Production online auth is disabled until Firebase ID-token verification replaces the local test identity header.
-- Tournament/house-rule profile selection, multi-round totals, manual meld composition,
-  playable-discard penalties, table-joker retrieval, and delta reconnect remain backlog items.
+- Tournament/house-rule profile selection, manual meld composition, claimed playable-discard penalties, table-joker retrieval, and delta reconnect remain backlog items. Progressive/fixed thresholds, 1–4 round authoritative totals, assisted/unassisted metadata, and mock-stake settlement are implemented.
 
 ## Dependency audit
 

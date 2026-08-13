@@ -34,6 +34,17 @@ This file owns the observed application toolchain. Product scope belongs in
   app/auth/firestore/functions/App Check/messaging in development builds; the committed
   adapter uses the modular API and does not add `expo-notifications`. Provider credentials,
   native Firebase config files, and production mutations remain human-gated.
+- `app.config.js` excludes Firebase native plugins when either ignored native config file
+  is absent, so the mock-first simulator build stays valid without a half-configured SDK;
+  both provider files must be present before the real Firebase plugin set activates.
+- The same mock-first boundary keeps all six RN Firebase packages in Expo's
+  `autolinking.exclude` list. The provider connection gate must remove that exclusion in
+  the same reviewed change that adds and reads back both native config files; otherwise an
+  unconfigured App Check native module can attempt to initialize before JavaScript starts.
+- The RN Firebase app plugin opts out of SPM (`ios.disableSPM=true`) so the future
+  provider-enabled build remains compatible with Expo's static-framework linkage.
+- A local Podfile config plugin applies the same CocoaPods flag even before provider
+  config exists, because React Native autolinking still discovers installed native modules.
 - `firebase/` contains deny-by-default Firestore rules, App Check-enforced callable
   Functions, and tests under the non-remote `demo-luma-okey` emulator namespace.
 
@@ -57,5 +68,9 @@ This file owns the observed application toolchain. Product scope belongs in
 - Expo Doctor passed 20/20 after RN Firebase integration on 2026-08-12. Production npm
   audit currently reports 7 moderate and 15 high transitive advisories; npm's suggested
   direct fixes are incompatible major downgrades, so release stays gated on upstream-compatible fixes.
+- React Native Skia is pinned to `2.6.4` and explicitly excluded from Expo's `2.6.2`
+  version check: upstream `2.6.4` fixes the static-framework header search path that
+  made the SDK-recommended patch fail native iOS compilation; its peer ranges cover the
+  installed React 19, React Native 0.86 and Reanimated 4.5 versions.
 - Native device, voice, purchase sandbox, signing, deployment, and store upload remain
   separate acceptance gates and are never implied by JavaScript bundle success.

@@ -28,9 +28,10 @@ A calm, luminous Okey room for trustworthy Classic and 101 matches with friends 
 
 **Exceptionally-well bar:**
 
-- A first-time player identifies their rack, turn, legal next action, picked tile, and discard target without instruction.
+- A first-time player identifies their rack, turn, legal next action, picked tile, and discard target without instruction; drawing and rack arrangement work by drag-and-drop with labelled tap fallbacks.
 - The same seed and command sequence yields the same result; online reconnect and duplicate commands cannot fork the room.
 - Tile interaction holds 60 FPS on target devices with a controlled 30 FPS fallback and an equivalent Reduced Motion path.
+- The default Luma table and optional authentic Kahvehane atmosphere share the same calm hierarchy and rule readability; theme selection never changes gameplay.
 
 ## Vision and boundaries
 
