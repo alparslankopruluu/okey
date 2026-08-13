@@ -54,6 +54,7 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 - Each implemented command includes a command ID, authenticated seat/player ID, expected sequence, and typed payload.
 - The object rejects malformed, idempotency-colliding, out-of-turn, stale-sequence, or unauthorized commands; successful state is persisted before broadcast.
 - Reconnect currently sends the latest full snapshot. Delta/event-cursor resume is a release-readiness backlog item. A 24-hour alarm expires abandoned rooms and closes sockets.
+- One authenticated account maps to one seat per room. Multiple validated device sockets may observe/control that same seat; reconnect never allocates another seat and always resumes from the authoritative full snapshot.
 - Hibernatable WebSockets preserve a minimal user attachment and avoid keeping idle room isolates active.
 
 ## Services
@@ -64,9 +65,9 @@ game-core → TypeScript standard runtime only (no React Native, network, clock,
 | `ProfileService` | profile/device/cosmetic ownership | local mock |
 | `RoomService` | create/join/resume/send command | offline + Worker contract |
 | `LedgerService` | append-only chips, bonus and purchase grants | in-memory/mock with idempotency tests |
-| `PurchasesService` | offerings, purchase, restore | RevenueCat mock |
-| `VoiceService` | PTT, mute, permission, reconnect | RealtimeKit mock |
-| `ChatService` | TTL messages, filter/rate/mute/block/report | local/room mock |
+| `PurchasesService` | offerings, purchase, restore | local RevenueCat-shaped mock: 3 consumables + weekly/yearly VIP; real SDK/catalog gated |
+| `VoiceService` | PTT, mute, permission, reconnect | local RealtimeKit-shaped mock wired to the table; real media/token service gated |
+| `ChatService` | TTL messages, filter/rate/mute/block/report | local adapter wired to the table; room transport/moderation backend gated |
 | `AudioProvider` | local music/effect/ambience channels, PTT duck, app lifecycle | bundled deterministic synthetic development assets |
 | `FriendshipService` | username search, request/accept/remove/block/invite | in-memory mock with rate limits |
 | `GiftService` | server-shaped idempotent gift spend receipt | in-memory ledger-backed mock; recipient gets no value |

@@ -44,12 +44,12 @@ nine-tile rack in portrait and landscape.
 ## M2 — Online/social/economy boundaries
 
 - [x] Cloudflare Worker + room Durable Object validates membership, sequence, idempotency, turns, reconnect/resume, expiry, snapshot conservation, and verified gift receipt replay locally.
-- [ ] Four-player protocol tests cover duplicate/out-of-turn commands, reconnect, disconnect, and same-account two-device behavior.
+- [x] Four-player protocol tests cover duplicate/out-of-turn commands, reconnect, disconnect, and same-account two-device behavior.
 - [x] Firebase modular mobile adapter and local Functions/Rules cover anonymous auth, App Check, FCM device registration, profiles, friendships, notifications, and append-only gift spend; real configs remain gated.
 - [x] Daily bonus rejects duplicates; mock wallet/gift authority rejects negative and replayed spend, enforces cooldown/hour/day caps, and records append-only ledger entries. Connected wallet authority remains provider-gated.
-- [ ] Chat covers filtering, rate limit, mute/block/report, and 24-hour TTL.
-- [ ] RealtimeKit mock covers permission denial, push-to-talk, mute, reconnect, and has no recording path.
-- [ ] RevenueCat mock exposes three chip packages plus weekly/yearly VIP and idempotent purchase webhooks.
+- [x] Chat covers filtering, rate limit, mute/block/report, and 24-hour TTL.
+- [x] RealtimeKit-shaped local mock covers permission denial, push-to-talk, mute, reconnect, and has no recording path; real microphone permission/media-token proof remains in M3.
+- [x] RevenueCat mock exposes three chip packages plus weekly/yearly VIP and idempotent purchase webhooks.
 - [x] Level/chip room catalog exposes casual and clearly labelled mock-stake tiers; purchased-chip production stakes remain disabled by feature flag.
 - [x] In-room gift sheet exposes recipient avatar, authoritative mock balance, affordability, explicit confirmation, and five-second cooldown in portrait and landscape.
 - [x] Mock gift cooldown/hour/day history persists across route remounts; exact room entry tiers propagate into 100/500/1,000-chip mock settlement without changing production stake gates.
@@ -60,7 +60,7 @@ nine-tile rack in portrait and landscape.
 
 - [x] Lint, typecheck, game-core/Worker/app tests, translation parity, Expo Doctor and local Firebase rules/policy tests pass; dependency audit risk is documented pending upstream-compatible fixes.
 - [x] iOS and Android development builds run on simulator/emulator; iOS portrait/both landscape directions, VoiceOver labels, gifts, bot pacing, rooms, and Kahvehane layout are recorded.
-- [ ] Large text, captured Reduced Motion interaction, Android orientation, physical-device performance, and Maestro evidence recorded.
+- [ ] Large text, Android orientation, physical-device performance, and Maestro evidence recorded. Reduced Motion is enabled and a full discard → three bot turns → draw cycle is captured on the iOS simulator.
 - [ ] Real-device voice and purchase sandbox acceptance completed after human provider setup.
 - [ ] Firebase/Cloudflare/RealtimeKit/RevenueCat dev resources created only after separate approval and verified by readback.
 - [ ] Store metadata/icon/screenshots reflect the real accepted build.

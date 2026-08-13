@@ -30,29 +30,54 @@ describe('chip ledger and purchases', () => {
   it('makes replayed purchase webhooks idempotent and rejects collisions', () => {
     const ledger = new InMemoryChipLedger();
     const purchases = new MockPurchaseAdapter(ledger);
-    const input = { transactionId: 'tx1', userId: 'u1', productId: 'pocket_glow' as const, createdAt: 1 };
-    expect(purchases.processVerifiedWebhook(input)).toEqual({ balance: 5000, duplicate: false });
-    expect(purchases.processVerifiedWebhook(input)).toEqual({ balance: 5000, duplicate: true });
-    expect(() => purchases.processVerifiedWebhook({ ...input, productId: 'room_glow' })).toThrow(/another ledger payload/);
+    const input = { transactionId: 'tx1', userId: 'u1', productId: 'chips_small' as const, createdAt: 1 };
+    expect(purchases.processVerifiedWebhook(input)).toEqual({ balance: 5000, duplicate: false, entitlement: null });
+    expect(purchases.processVerifiedWebhook(input)).toEqual({ balance: 5000, duplicate: true, entitlement: null });
+    expect(() => purchases.processVerifiedWebhook({ ...input, productId: 'chips_large' })).toThrow(/another purchase payload/);
+  });
+
+  it('exposes exactly three consumables plus weekly/yearly VIP and restores entitlement', () => {
+    const ledger = new InMemoryChipLedger();
+    const purchases = new MockPurchaseAdapter(ledger);
+    expect(purchases.processVerifiedWebhook({ transactionId: 'vip-1', userId: 'u1', productId: 'vip_weekly', createdAt: 1 }))
+      .toEqual({ balance: 0, duplicate: false, entitlement: 'vip' });
+    expect(purchases.processVerifiedWebhook({ transactionId: 'vip-1', userId: 'u1', productId: 'vip_weekly', createdAt: 1 }))
+      .toEqual({ balance: 0, duplicate: true, entitlement: 'vip' });
+    expect(purchases.restore('u1')).toEqual({ entitlement: 'vip' });
+    expect(purchases.restore('u2')).toEqual({ entitlement: null });
   });
 });
 
 describe('social safety mocks', () => {
-  it('rate-limits chat, expires messages, and honors blocks', () => {
+  it('filters, rate-limits, mutes, blocks, reports, and expires chat', () => {
     const chat = new MockChatAdapter();
-    for (let index = 0; index < 5; index += 1) chat.send({ roomId: 'r1', senderId: 'a', body: `m${String(index)}`, now: index });
+    const first = chat.send({ roomId: 'r1', senderId: 'a', body: 'aptal olma', now: 0 });
+    expect(first.body).toBe('••• olma');
+    for (let index = 1; index < 5; index += 1) chat.send({ roomId: 'r1', senderId: 'a', body: `m${String(index)}`, now: index });
     expect(() => chat.send({ roomId: 'r1', senderId: 'a', body: 'six', now: 5 })).toThrow(/rate limit/);
     expect(chat.list('r1', 'viewer', 6)).toHaveLength(5);
+    chat.mute('viewer', 'a');
+    expect(chat.list('r1', 'viewer', 6)).toHaveLength(0);
+    chat.unmute('viewer', 'a');
+    expect(chat.list('r1', 'viewer', 6)).toHaveLength(5);
+    const report = chat.report({ reporterId: 'viewer', messageId: first.id, reason: 'harassment', now: 7 });
+    expect(report).toMatchObject({ reporterId: 'viewer', reportedUserId: 'a', reason: 'harassment' });
+    expect(chat.report({ reporterId: 'viewer', messageId: first.id, reason: 'harassment', now: 8 })).toEqual(report);
+    expect(chat.reportsFor('viewer')).toEqual([report]);
     chat.block('viewer', 'a');
     expect(chat.list('r1', 'viewer', 6)).toHaveLength(0);
     expect(chat.list('r1', 'other', 24 * 60 * 60 * 1000 + 10)).toHaveLength(0);
   });
 
-  it('never exposes a voice-recording mode', () => {
+  it('handles permission, mute, disconnect/reconnect, and never exposes recording', () => {
     const voice = new MockVoiceAdapter();
-    expect(voice.join('granted')).toMatchObject({ joined: true, muted: true, recordingEnabled: false });
+    expect(voice.join('granted')).toMatchObject({ joined: true, reconnecting: false, muted: true, recordingEnabled: false });
     expect(voice.setPushToTalk(true)).toMatchObject({ pushToTalkActive: true, muted: false, recordingEnabled: false });
-    expect(voice.join('denied')).toMatchObject({ joined: false, pushToTalkActive: false, recordingEnabled: false });
+    expect(voice.setMuted(true)).toMatchObject({ pushToTalkActive: false, muted: true, recordingEnabled: false });
+    expect(voice.disconnect()).toMatchObject({ joined: false, reconnecting: true, muted: true, recordingEnabled: false });
+    expect(voice.reconnect()).toMatchObject({ joined: true, reconnecting: false, muted: true, recordingEnabled: false });
+    expect(voice.join('denied')).toMatchObject({ joined: false, reconnecting: false, pushToTalkActive: false, recordingEnabled: false });
+    expect(voice.reconnect()).toMatchObject({ joined: false, reconnecting: false, recordingEnabled: false });
   });
 });
 

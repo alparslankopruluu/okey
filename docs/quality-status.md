@@ -57,9 +57,9 @@
 - The first native attempt exposed an incompletely extracted local `node_modules` tree
   (missing Skia simulator and Workerd binaries). A lockfile-exact `npm ci` restored both;
   the Worker typecheck and second native build then passed without source-version changes.
-- The 2026-08-13 interaction checkpoint passes 167-key TR/EN parity, zero-warning
-  lint and strict app/core/Worker typecheck. The final run passes 67 root
-  app/core/service tests, 6 Worker runtime tests, 9 Functions tests and 4 Firestore emulator
+- The 2026-08-13 interaction checkpoint passes 176-key TR/EN parity, zero-warning
+  lint and strict app/core/Worker typecheck. The final run passes 68 root
+  app/core/service tests, 7 Worker runtime tests, 9 Functions tests and 4 Firestore emulator
   rules tests, including exact 100/500/1,000 mock-room settlement and remount-resistant
   gift cooldown/block enforcement. Expo Doctor passes 20/20.
 - A regenerated native iOS Debug build succeeds under Xcode 26.6 and launches on the
@@ -72,6 +72,8 @@
   [`ios-kahvehane-table-landscape.png`](evidence/simulator-2026-08-13/ios-kahvehane-table-landscape.png),
   [`ios-kahvehane-gift-landscape.png`](evidence/simulator-2026-08-13/ios-kahvehane-gift-landscape.png),
   [`ios-rooms-level-chip.png`](evidence/simulator-2026-08-13/ios-rooms-level-chip.png),
+  [`ios-reduced-motion-enabled.png`](evidence/simulator-2026-08-13/ios-reduced-motion-enabled.png),
+  [`ios-reduced-motion-draw-fixed.png`](evidence/simulator-2026-08-13/ios-reduced-motion-draw-fixed.png),
   [`ios-landscape-opposite-table.png`](evidence/simulator-2026-08-12/ios-landscape-opposite-table.png),
   and [`android-tablet-development-build.png`](evidence/simulator-2026-08-13/android-tablet-development-build.png).
 - Native artifact proof: the iOS simulator executable SHA-256 is
@@ -81,8 +83,11 @@
 
 ## Open gates
 
-- iOS/Android physical-device, Android orientation, large-text, a captured Reduced Motion
-  interaction recording, Maestro, and performance profiling remain open. Native iOS and
+- iOS/Android physical-device, Android orientation, large-text, Maestro, and performance
+  profiling remain open. Reduced Motion was enabled in the iOS simulator and a full
+  discard → three readable bot turns → wall draw cycle completed with positional motion
+  suppressed; the run caught and then verified the fix for a remount-derived command-ID
+  collision (wall 45→44, rack 14→15). Native iOS and
   Android development builds themselves now pass; the iOS build contains upstream script/
   Swift warnings but no project compile error.
 - Firebase, Cloudflare deploy, RealtimeKit, RevenueCat/store catalogs, signing, licensed music, and store uploads remain explicit human/provider TODOs.

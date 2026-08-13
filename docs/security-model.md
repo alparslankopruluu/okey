@@ -31,7 +31,7 @@
 | Purchase webhook | signature verification in real adapter, transaction ID uniqueness | duplicate/invalid webhook metric | no grant on failure; replay test |
 | Daily bonus | server calendar day + per-day idempotency key | duplicate claim counter | derived ledger reconciliation test |
 | Chat/voice | 18+, rate limits, filter, mute/block/report, PTT and permission | privacy-safe abuse counts | immediate local mute/block; report queue; no recording path test |
-| Identity/device | anonymous first, secure linking, one active player seat per account/room | concurrent-device conflict signal | newest validated session policy; two-device test |
+| Identity/device | anonymous first, secure linking, one player seat per account/room; validated devices share that seat | concurrent-device session signal | full-snapshot reconnect and two-device Worker test |
 | Remote Config | signed/provider fetch through façade, safe defaults | config version/parse failure | stake rooms default OFF; disable voice/store remotely |
 | Admin/provider | root/human only, least privilege, App Check/claims | provider audit logs/readback | revoke/rotate; never expose general user browser in V1 |
 
@@ -61,3 +61,5 @@
 ## Current local boundary
 
 The committed Worker is intentionally non-production: `X-Luma-User` is a local test identity, provider feature flags default OFF, and no Cloudflare deployment exists. A production adapter must verify a Firebase ID token at the Worker boundary, derive the user ID from verified claims, reject the client-provided identity header, and pass the verified identity to the room object. This is a release blocker, not optional hardening.
+
+The table chat, voice, purchase and device-policy acceptance proofs are provider-shaped local mocks. They prove filtering/rate/mute/block/report/TTL, permission/PTT/mute/reconnect/no-recording, transaction replay/collision/VIP restore, and one-seat/two-socket reconnect semantics. They do not prove RealtimeKit media, RevenueCat signatures, FCM delivery, or production identity until the separately approved dev projects are connected.

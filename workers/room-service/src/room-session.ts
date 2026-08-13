@@ -223,8 +223,9 @@ export class RoomSession extends DurableObject<Env> {
     }
   }
 
-  public webSocketClose(socket: WebSocket, code: number, reason: string): void {
-    socket.close(code, reason);
+  public webSocketClose(_socket: WebSocket, _code: number, _reason: string): void {
+    // Workerd already finalized the peer before this lifecycle callback runs.
+    // Closing again can attempt to send reserved transport codes such as 1006.
   }
 
   public webSocketError(socket: WebSocket, error: unknown): void {

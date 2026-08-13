@@ -12,6 +12,7 @@ import {
   recordMatchRound,
   settleMatchEconomy,
   type GameState,
+  type GameCommand,
   type GameVariant,
 } from '@luma/game-core';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -41,6 +42,9 @@ import { GiftSheet, giftImageKey } from '../../src/components/gift-sheet';
 import { GIFT_CATALOG, nextGiftId, type GiftId } from '../../src/services/gifts';
 import { LocalGiftAuthority } from '../../src/services/local-gift-authority';
 import { roomEconomyMode, type MockEconomyMode, type RoomEntry } from '../../src/services/room-catalog';
+import { MockChatAdapter } from '../../src/services/mock-chat';
+import { MockVoiceAdapter } from '../../src/services/mock-voice';
+import type { ChatMessage } from '../../src/services/contracts';
 
 const PLAYERS = ['p0', 'p1', 'p2', 'p3'] as const;
 const LANDSCAPE_TABLE_SHARE = 0.56;
@@ -75,7 +79,8 @@ export default function GameScreen() {
   const [notice, setNotice] = useState('');
   const [chatOpen, setChatOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState('');
-  const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
+  const [chatSafetyTarget, setChatSafetyTarget] = useState<ChatMessage>();
   const [talking, setTalking] = useState(false);
   const [giftSeat, setGiftSeat] = useState<number>();
   const [giftEvent, setGiftEvent] = useState<TableGiftEvent>();
@@ -97,6 +102,8 @@ export default function GameScreen() {
   const hydrationRequest = useRef<symbol | undefined>(undefined);
   const audioState = useRef<{ sequence: number; discards: number; melds: number; penalties: number; finished: boolean; turnIndex: number; winnerId?: string | undefined } | undefined>(undefined);
   const localGiftAuthority = useRef<LocalGiftAuthority | undefined>(undefined);
+  const chatAdapter = useRef(new MockChatAdapter());
+  const voiceAdapter = useRef(new MockVoiceAdapter());
   if (localGiftAuthority.current === undefined) {
     localGiftAuthority.current = new LocalGiftAuthority(chips, giftHistory, {
       isBlocked: (_senderId, recipientId) => blockedUserIds.includes(recipientId),
@@ -221,6 +228,12 @@ export default function GameScreen() {
   }, [setVoiceActive, talking]);
 
   useEffect(() => {
+    const voice = voiceAdapter.current;
+    voice.join('granted');
+    return () => { voice.disconnect(); };
+  }, []);
+
+  useEffect(() => {
     if (hydratedKey !== persistenceKey) return;
     const next = {
       sequence: game.sequence,
@@ -279,67 +292,53 @@ export default function GameScreen() {
   }, [game.phase, game.sequence, game.turnIndex, reducedMotion]);
 
   const runUserCommand = (kind: 'draw' | 'discard') => {
-    try {
-      const commandId = `user-${kind}-${commandIndex.current++}`;
-      if (kind === 'draw') {
-        setGame((current) => applyCommand(current, {
-          type: 'draw_wall', commandId, playerId: 'p0', expectedSequence: current.sequence,
-        }).state);
-        setNotice('');
-        return;
-      }
-      if (selectedId === undefined) {
-        setNotice(t('game.select'));
-        return;
-      }
-      const command = selectedFinishMelds === undefined
-        ? { type: 'discard' as const, tileId: selectedId, commandId, playerId: 'p0', expectedSequence: game.sequence }
-        : { type: 'finish' as const, discardTileId: selectedId, melds: selectedFinishMelds, commandId, playerId: 'p0', expectedSequence: game.sequence };
-      setGame(applyCommand(game, command).state);
-      setSelectedId(undefined);
-      setNotice('');
-    } catch (error) {
-      setNotice(error instanceof GameRuleError ? error.message : String(error));
+    if (kind === 'draw') {
+      applyUserCommand((current) => ({
+        type: 'draw_wall', commandId: `user-draw-wall-${current.sequence}`, playerId: 'p0', expectedSequence: current.sequence,
+      }));
+      return;
     }
+    if (selectedId === undefined) {
+      setNotice(t('game.select'));
+      return;
+    }
+    applyUserCommand((current) => selectedFinishMelds === undefined
+      ? { type: 'discard', tileId: selectedId, commandId: `user-discard-${current.sequence}`, playerId: 'p0', expectedSequence: current.sequence }
+      : { type: 'finish', discardTileId: selectedId, melds: selectedFinishMelds, commandId: `user-finish-${current.sequence}`, playerId: 'p0', expectedSequence: current.sequence });
+    setSelectedId(undefined);
   };
 
   const takeLatestDiscard = () => {
-    try {
-      setGame((current) => applyCommand(current, {
-        type: 'draw_discard',
-        commandId: `user-draw-discard-${commandIndex.current++}`,
-        playerId: 'p0',
-        expectedSequence: current.sequence,
-      }).state);
-      setNotice('');
-    } catch (error) {
-      setNotice(error instanceof GameRuleError ? error.message : String(error));
-    }
+    applyUserCommand((current) => ({
+      type: 'draw_discard', commandId: `user-draw-discard-${current.sequence}`, playerId: 'p0', expectedSequence: current.sequence,
+    }));
   };
 
-  const runTableAction = () => {
-    try {
-      if (automaticOpening !== undefined) {
-        setGame(applyCommand(game, {
-          type: 'open_melds',
-          commandId: `user-open-${commandIndex.current++}`,
-          playerId: 'p0',
-          expectedSequence: game.sequence,
-          melds: automaticOpening.melds,
-        }).state);
-      } else if (automaticExtension !== undefined) {
-        setGame(applyCommand(game, {
-          type: 'extend_meld',
-          commandId: `user-extend-${commandIndex.current++}`,
-          playerId: 'p0',
-          expectedSequence: game.sequence,
-          tableMeldId: automaticExtension.tableMeldId,
-          tileIds: automaticExtension.tileIds,
-        }).state);
+  function applyUserCommand(build: (current: GameState) => GameCommand): void {
+    setGame((current) => {
+      try {
+        const next = applyCommand(current, build(current)).state;
+        setNotice('');
+        return next;
+      } catch (error) {
+        setNotice(error instanceof GameRuleError ? error.message : String(error));
+        return current;
       }
-      setNotice('');
-    } catch (error) {
-      setNotice(error instanceof GameRuleError ? error.message : String(error));
+    });
+  }
+
+  const runTableAction = () => {
+    if (automaticOpening !== undefined) {
+      applyUserCommand((current) => ({
+          type: 'open_melds', commandId: `user-open-${current.sequence}`, playerId: 'p0',
+          expectedSequence: current.sequence, melds: automaticOpening.melds,
+      }));
+    } else if (automaticExtension !== undefined) {
+      applyUserCommand((current) => ({
+          type: 'extend_meld', commandId: `user-extend-${current.sequence}`, playerId: 'p0',
+          expectedSequence: current.sequence, tableMeldId: automaticExtension.tableMeldId,
+          tileIds: automaticExtension.tileIds,
+      }));
     }
   };
 
@@ -360,8 +359,40 @@ export default function GameScreen() {
   const sendMessage = () => {
     const message = chatDraft.trim().slice(0, 240);
     if (message.length === 0) return;
-    setMessages((items) => [...items.slice(-19), message]);
-    setChatDraft('');
+    try {
+      chatAdapter.current.send({ roomId: identity.gameId, senderId: 'p0', body: message, now: Date.now() });
+      setMessages(chatAdapter.current.list(identity.gameId, 'p0', Date.now()).slice(-20));
+      setChatDraft('');
+      setNotice('');
+    } catch {
+      setNotice(t('chat.unavailable'));
+    }
+  };
+
+  const toggleChat = () => {
+    setChatOpen((open) => {
+      const next = !open;
+      if (next && chatAdapter.current.list(identity.gameId, 'p0', Date.now()).length === 0) {
+        chatAdapter.current.send({ roomId: identity.gameId, senderId: 'p1', body: t('chat.demoMessage'), now: Date.now() });
+        setMessages(chatAdapter.current.list(identity.gameId, 'p0', Date.now()));
+      }
+      return next;
+    });
+  };
+
+  const applyChatSafetyAction = (action: 'mute' | 'block' | 'report') => {
+    if (chatSafetyTarget === undefined) return;
+    if (action === 'mute') chatAdapter.current.mute('p0', chatSafetyTarget.senderId);
+    if (action === 'block') chatAdapter.current.block('p0', chatSafetyTarget.senderId);
+    if (action === 'report') chatAdapter.current.report({ reporterId: 'p0', messageId: chatSafetyTarget.id, reason: 'other', now: Date.now() });
+    setMessages(chatAdapter.current.list(identity.gameId, 'p0', Date.now()).slice(-20));
+    setChatSafetyTarget(undefined);
+    setNotice(t(`chat.${action}Applied`));
+  };
+
+  const setPushToTalk = (active: boolean) => {
+    const state = voiceAdapter.current.setPushToTalk(active);
+    setTalking(state.pushToTalkActive);
   };
 
   const sendGift = (giftId: GiftId) => {
@@ -518,7 +549,7 @@ export default function GameScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('game.chat')}
-          onPress={() => setChatOpen((open) => !open)}
+          onPress={toggleChat}
           style={[styles.secondary, compactLandscapeActions && styles.compactSecondary, { backgroundColor: colors.glass }]}
         >
           <MessageCircle color={colors.text} />
@@ -527,8 +558,8 @@ export default function GameScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('game.voiceMock')}
-          onPressIn={() => setTalking(true)}
-          onPressOut={() => setTalking(false)}
+          onPressIn={() => setPushToTalk(true)}
+          onPressOut={() => setPushToTalk(false)}
           style={[styles.voice, compactLandscapeActions && styles.compactVoice, { backgroundColor: talking ? palette.coral : colors.glass }]}
         >
           <Mic color={talking ? palette.white : colors.text} />
@@ -593,8 +624,27 @@ export default function GameScreen() {
             <Pressable accessibilityRole="button" accessibilityLabel={t('common.close')} onPress={() => setChatOpen(false)}><X color={colors.text} /></Pressable>
           </View>
           <ScrollView style={styles.messages} contentContainerStyle={styles.messageList}>
-            {messages.map((message, index) => <Text key={`${index}-${message}`} style={[styles.message, { color: colors.text, backgroundColor: colors.elevated }]}>{message}</Text>)}
+            {messages.map((message) => message.senderId === 'p0'
+              ? <Text key={message.id} style={[styles.message, { color: colors.text, backgroundColor: colors.elevated }]}>{message.body}</Text>
+              : (
+                <Pressable
+                  key={message.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.safetyActions', { message: message.body })}
+                  onPress={() => setChatSafetyTarget(message)}
+                  style={[styles.message, styles.incomingMessage, { backgroundColor: colors.glass }]}
+                >
+                  <Text style={{ color: colors.text }}>{message.body}</Text>
+                </Pressable>
+              ))}
           </ScrollView>
+          {chatSafetyTarget !== undefined && (
+            <View style={styles.chatSafetyActions}>
+              <Pressable accessibilityRole="button" onPress={() => applyChatSafetyAction('mute')}><Text style={[styles.chatSafetyLabel, { color: colors.text }]}>{t('chat.mute')}</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => applyChatSafetyAction('block')}><Text style={[styles.chatSafetyLabel, { color: colors.text }]}>{t('chat.block')}</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => applyChatSafetyAction('report')}><Text style={[styles.chatSafetyLabel, { color: palette.coral }]}>{t('chat.report')}</Text></Pressable>
+            </View>
+          )}
           <View style={styles.composer}>
             <TextInput
               accessibilityLabel={t('chat.placeholder')}
@@ -656,6 +706,9 @@ const styles = StyleSheet.create({
   messages: { flex: 1, marginVertical: space.sm },
   messageList: { gap: space.xs, justifyContent: 'flex-end' },
   message: { alignSelf: 'flex-end', maxWidth: '82%', paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.md, overflow: 'hidden' },
+  incomingMessage: { alignSelf: 'flex-start' },
+  chatSafetyActions: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', gap: space.sm, marginBottom: space.xs },
+  chatSafetyLabel: { minHeight: 44, paddingHorizontal: space.sm, textAlignVertical: 'center', fontSize: 13, fontWeight: '800' },
   composer: { flexDirection: 'row', gap: space.xs },
   input: { flex: 1, minHeight: 46, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: space.md },
   send: { width: 46, height: 46, borderRadius: 23, backgroundColor: palette.aqua, alignItems: 'center', justifyContent: 'center' },

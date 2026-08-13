@@ -21,8 +21,19 @@ export interface ChatMessage {
   readonly expiresAt: number;
 }
 
+export interface ChatReport {
+  readonly id: string;
+  readonly roomId: string;
+  readonly reporterId: string;
+  readonly reportedUserId: string;
+  readonly messageId: string;
+  readonly reason: 'harassment' | 'spam' | 'other';
+  readonly createdAt: number;
+}
+
 export interface VoiceState {
   readonly joined: boolean;
+  readonly reconnecting: boolean;
   readonly muted: boolean;
   readonly pushToTalkActive: boolean;
   readonly recordingEnabled: false;

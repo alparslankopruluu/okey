@@ -58,6 +58,48 @@ describe('authoritative room Durable Object', () => {
     expect((await worker.fetch(request('/v1/rooms/commands/command', 'intruder', { command }), env)).status).toBe(403);
   });
 
+  it('keeps one seat per account across two devices, reconnect, disconnect, stale and out-of-turn commands', async () => {
+    const room = env.ROOMS.getByName('two-device');
+    const initialized = await room.init({ roomId: 'two-device', hostUserId: 'host', variant: 'classic', seed: 42 });
+    const firstJoin = await room.join('friend');
+    const secondDeviceJoin = await room.join('friend');
+    expect(secondDeviceJoin.seats.friend).toBe(firstJoin.seats.friend);
+    expect(Object.keys(secondDeviceJoin.seats)).toEqual(['host', 'friend']);
+
+    const hostPlayerId = initialized.seats.host;
+    const hostTileId = initialized.state.players[0]?.rack[0]?.id;
+    if (hostPlayerId === undefined || hostTileId === undefined) throw new Error('Expected host dealer seat');
+    const afterDiscard = await room.submitCommand({
+      userId: 'host',
+      command: { type: 'discard', commandId: 'two-device-discard', playerId: hostPlayerId, expectedSequence: 0, tileId: hostTileId },
+    });
+    const outOfTurn = await room.trySubmitCommand({
+      userId: 'host',
+      command: { type: 'draw_wall', commandId: 'host-out-of-turn', playerId: hostPlayerId, expectedSequence: afterDiscard.state.sequence },
+    });
+    expect(outOfTurn).toMatchObject({ ok: false, code: 'rule_error' });
+    const friendPlayerId = afterDiscard.seats.friend;
+    if (friendPlayerId === undefined) throw new Error('Expected friend seat');
+    const stale = await room.trySubmitCommand({
+      userId: 'friend',
+      command: { type: 'draw_wall', commandId: 'friend-stale', playerId: friendPlayerId, expectedSequence: 0 },
+    });
+    expect(stale).toMatchObject({ ok: false, code: 'rule_error' });
+
+    const socketRequest = () => new Request('https://local.test/v1/rooms/two-device/socket', {
+      headers: { 'X-Luma-User': 'friend', Upgrade: 'websocket' },
+    });
+    const firstSocket = await worker.fetch(socketRequest(), env);
+    const secondSocket = await worker.fetch(socketRequest(), env);
+    expect(firstSocket.status).toBe(101);
+    expect(secondSocket.status).toBe(101);
+    firstSocket.webSocket?.accept();
+    firstSocket.webSocket?.close(1000, 'device disconnected');
+    const reconnected = await worker.fetch(socketRequest(), env);
+    expect(reconnected.status).toBe(101);
+    expect((await room.snapshot('friend')).state).toEqual(afterDiscard.state);
+  });
+
   it('authoritatively persists a complete 101 bot round including table melds and settlement', async () => {
     const room = env.ROOMS.getByName('complete-101');
     let snapshot = await room.init({ roomId: 'complete-101', hostUserId: 'u0', variant: '101', seed: 20260811 });
