@@ -3,9 +3,10 @@ import { calculateDailyClaim, InMemoryChipLedger } from './economy';
 import { MockChatAdapter } from './mock-chat';
 import { MockPurchaseAdapter } from './mock-purchases';
 import { MockVoiceAdapter } from './mock-voice';
-import { GIFT_CATALOG, InMemoryGiftService } from './gifts';
+import { GIFT_CATALOG, InMemoryGiftService, nextGiftId } from './gifts';
 import { InMemoryFriendshipService } from './mock-social';
 import { InMemoryNotificationCenter } from './notifications';
+import { LocalGiftAuthority } from './local-gift-authority';
 
 describe('daily bonus', () => {
   it('uses the seven-day schedule, rejects duplicates, and resets a missed streak', () => {
@@ -56,6 +57,33 @@ describe('social safety mocks', () => {
 });
 
 describe('gift economy', () => {
+  it('routes the screen-level mock authority through ledger and cooldown policy', () => {
+    const authority = new LocalGiftAuthority(5000);
+    expect(authority.send({ idempotencyKey: 'screen_1', recipientId: 'p1', giftId: 'coffee', roomId: 'room_1', now: 10_000 })).toMatchObject({ chipCost: 100, duplicate: false });
+    expect(authority.balance()).toBe(4900);
+    expect(authority.send({ idempotencyKey: 'screen_1', recipientId: 'p1', giftId: 'coffee', roomId: 'room_1', now: 10_000 })).toMatchObject({ duplicate: true });
+    expect(authority.balance()).toBe(4900);
+    expect(() => authority.send({ idempotencyKey: 'screen_2', recipientId: 'p1', giftId: 'tea', roomId: 'room_1', now: 12_000 })).toThrow(/cooldown/);
+  });
+
+  it('preserves gift limits and blocking when the game screen remounts', () => {
+    const first = new LocalGiftAuthority(5000);
+    const sent = first.send({ idempotencyKey: 'persisted_1', recipientId: 'p1', giftId: 'coffee', roomId: 'room_1', now: 10_000 });
+    const history = [{
+      id: sent.id, senderId: sent.senderId, recipientId: sent.recipientId, giftId: sent.giftId,
+      roomId: sent.roomId, chipCost: sent.chipCost, createdAt: sent.createdAt,
+    }];
+    const remounted = new LocalGiftAuthority(first.balance(), history, { isBlocked: (_sender, recipient) => recipient === 'p2' });
+    expect(() => remounted.send({ idempotencyKey: 'persisted_2', recipientId: 'p1', giftId: 'tea', roomId: 'room_1', now: 12_000 })).toThrow(/cooldown/);
+    expect(() => remounted.send({ idempotencyKey: 'persisted_3', recipientId: 'p2', giftId: 'tea', roomId: 'room_1', now: 20_000 })).toThrow(/Blocked/);
+  });
+
+  it('allocates a fresh gift id after a screen remount, even in the same millisecond', () => {
+    const history = [{ id: 'gift-room_1-10000' }, { id: 'gift-room_1-10000-1' }];
+    expect(nextGiftId('room_1', 10_000, history)).toBe('gift-room_1-10000-2');
+    expect(nextGiftId('room_1', 20_000, history)).toBe('gift-room_1-20000');
+  });
+
   it('uses the fixed catalog, spends only the sender, and is idempotent', () => {
     expect(GIFT_CATALOG).toEqual([
       { id: 'tea', chipCost: 50 }, { id: 'coffee', chipCost: 100 }, { id: 'chocolate', chipCost: 150 },

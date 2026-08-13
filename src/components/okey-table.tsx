@@ -2,7 +2,9 @@ import { Canvas, Circle, LinearGradient, RoundedRect, vec } from '@shopify/react
 import type { GameState, TableMeld, Tile } from '@luma/game-core';
 import { useEffect } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useTranslation } from 'react-i18next';
 import { AvatarMedallion } from './avatar-medallion';
 import { TileFace } from './tile-face';
@@ -38,6 +40,10 @@ interface OkeyTableProps {
   readonly reducedMotion?: boolean | undefined;
   readonly giftEvent?: TableGiftEvent | undefined;
   readonly onSeatPress?: ((seatIndex: number) => void) | undefined;
+  readonly theme?: 'luma' | 'kahvehane';
+  readonly wallDrawEnabled?: boolean;
+  readonly onWallDraw?: (() => void) | undefined;
+  readonly wallDropDirection?: 'down' | 'right';
 }
 
 interface SeatPosition {
@@ -88,7 +94,9 @@ function MeldGroup({ meld, compact, reducedMotion }: { meld: TableMeld; compact:
     : t('a11y.tile', { color: t(`color.${tile.color ?? 'black'}`), number: tile.number })).join(', ');
   return (
     <Animated.View accessible accessibilityLabel={label} style={[styles.meld, animatedStyle]}>
-      {meld.tiles.map((tile) => <TileFace key={tile.id} tile={tile} size={compact ? 20 : 24} />)}
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.meldTiles}>
+        {meld.tiles.map((tile) => <TileFace key={tile.id} tile={tile} size={compact ? 20 : 24} />)}
+      </View>
     </Animated.View>
   );
 }
@@ -123,14 +131,86 @@ function GiftFlight({ event, width, height, reducedMotion }: { event: TableGiftE
   );
 }
 
-function WinnerGlow({ winnerId, reducedMotion }: { winnerId: string; reducedMotion: boolean }) {
+function WinnerGlow({ winnerId, label, reducedMotion, lowPerformance }: { winnerId: string; label: string; reducedMotion: boolean; lowPerformance: boolean }) {
   const progress = useSharedValue(0);
   useEffect(() => {
     progress.value = 0;
     progress.value = withTiming(1, { duration: reducedMotion ? 140 : 320, easing: Easing.out(Easing.cubic) });
   }, [progress, reducedMotion, winnerId]);
   const animatedStyle = useAnimatedStyle(() => ({ opacity: reducedMotion ? progress.value * 0.72 : progress.value }));
-  return <Animated.View pointerEvents="none" accessibilityElementsHidden style={[styles.winnerGlow, animatedStyle]} />;
+  return (
+    <Animated.View pointerEvents="none" accessible accessibilityRole="text" accessibilityLabel={label} style={[styles.winnerGlow, animatedStyle]}>
+      {!reducedMotion && !lowPerformance && (
+        <View accessibilityElementsHidden style={styles.winnerParticles}>
+          {Array.from({ length: 8 }, (_, index) => (
+            <View
+              key={index}
+              style={[
+                styles.winnerParticle,
+                {
+                  left: `${12 + ((index * 19) % 76)}%`,
+                  top: `${16 + ((index * 23) % 64)}%`,
+                  backgroundColor: index % 2 === 0 ? palette.aqua : palette.lilac,
+                },
+              ]}
+            />
+          ))}
+        </View>
+      )}
+      <View style={styles.winnerCard}>
+        <Text style={styles.winnerLabel}>{label}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+function DraggableWall({ count, label, enabled, reducedMotion, dropDirection, onDraw }: {
+  count: number;
+  label: string;
+  enabled: boolean;
+  reducedMotion: boolean;
+  dropDirection: 'down' | 'right';
+  onDraw?: (() => void) | undefined;
+}) {
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const opacity = useSharedValue(1);
+  const pan = Gesture.Pan()
+    .enabled(enabled && onDraw !== undefined)
+    .minDistance(8)
+    .onUpdate((event) => {
+      const distance = Math.sqrt(event.translationX ** 2 + event.translationY ** 2);
+      translateX.value = reducedMotion ? 0 : Math.max(-110, Math.min(110, event.translationX));
+      translateY.value = reducedMotion ? 0 : Math.max(-90, Math.min(90, event.translationY));
+      opacity.value = reducedMotion ? (distance > 40 ? 0.62 : 1) : 1;
+    })
+    .onEnd((event) => {
+      const towardRack = dropDirection === 'right' ? event.translationX : event.translationY;
+      const crossAxis = dropDirection === 'right' ? Math.abs(event.translationY) : Math.abs(event.translationX);
+      if (towardRack > 48 && crossAxis < towardRack * 0.9 && onDraw !== undefined) scheduleOnRN(onDraw);
+      translateX.value = withTiming(0, { duration: reducedMotion ? 0 : 160 });
+      translateY.value = withTiming(0, { duration: reducedMotion ? 0 : 160 });
+      opacity.value = withTiming(1, { duration: reducedMotion ? 0 : 120 });
+    });
+  const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value, transform: [{ translateX: translateX.value }, { translateY: translateY.value }] }));
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View style={[styles.centerPile, enabled && styles.actionableWall, animatedStyle]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityHint={enabled ? label : undefined}
+          accessibilityState={{ disabled: !enabled }}
+          disabled={!enabled}
+          onPress={onDraw}
+          style={styles.wallPressable}
+        >
+          <Text style={styles.wallCount}>{count}</Text>
+          <Text style={styles.wallLabel}>{label}</Text>
+        </Pressable>
+      </Animated.View>
+    </GestureDetector>
+  );
 }
 
 export function OkeyTable({
@@ -146,6 +226,10 @@ export function OkeyTable({
   reducedMotion = false,
   giftEvent,
   onSeatPress,
+  theme = 'luma',
+  wallDrawEnabled = false,
+  onWallDraw,
+  wallDropDirection = 'down',
 }: OkeyTableProps) {
   const { t } = useTranslation();
   const compact = height < 250 || width < 350;
@@ -159,15 +243,28 @@ export function OkeyTable({
   const discards = latestDiscards ?? fallbackDiscards(state);
   const visibleDiscards = discards.filter((discard) => seatIndexForPlayer(state, discard.playerId) >= 0);
   const isWinner = state.phase === 'round_finished' && state.winnerId !== undefined;
+  const winnerIndex = state.winnerId === undefined ? -1 : seatIndexForPlayer(state, state.winnerId);
+  const winnerLabel = winnerIndex === 0
+    ? t('game.youWon')
+    : t('game.roundWinner', { name: playerNames[winnerIndex] ?? state.winnerId });
 
   return (
     <View accessibilityLabel={state.variant === 'classic' ? t('game.classic') : t('game.101')} style={[styles.root, { width, height }]}>
+      {theme === 'kahvehane' && (
+        <Image
+          accessibilityElementsHidden
+          blurRadius={lowPerformance ? 0 : 0.4}
+          resizeMode="cover"
+          source={images.themes.kahvehaneStyleFrame}
+          style={[StyleSheet.absoluteFill, styles.kahvehaneBackdrop]}
+        />
+      )}
       <Canvas style={StyleSheet.absoluteFill}>
         <RoundedRect x={2} y={2} width={width - 4} height={height - 4} r={Math.min(radius.lg * 2, height / 3)}>
-          <LinearGradient start={vec(0, 0)} end={vec(width, height)} colors={['#263B68', '#121B3B', '#29325D']} />
+          <LinearGradient start={vec(0, 0)} end={vec(width, height)} colors={theme === 'kahvehane' ? ['rgba(107,53,27,0.88)', 'rgba(46,22,12,0.92)', 'rgba(91,42,20,0.88)'] : ['#263B68', '#121B3B', '#29325D']} />
         </RoundedRect>
-        <RoundedRect x={18} y={18} width={width - 36} height={height - 36} r={Math.min(radius.lg * 1.7, height / 3)} color="#172B50" />
-        <Circle cx={width / 2} cy={height / 2} r={Math.min(width, height) * 0.14} color="rgba(41,225,214,0.08)" />
+        <RoundedRect x={18} y={18} width={width - 36} height={height - 36} r={Math.min(radius.lg * 1.7, height / 3)} color={theme === 'kahvehane' ? 'rgba(78,37,18,0.72)' : '#172B50'} />
+        <Circle cx={width / 2} cy={height / 2} r={Math.min(width, height) * 0.14} color={theme === 'kahvehane' ? 'rgba(232,199,122,0.09)' : 'rgba(41,225,214,0.08)'} />
         {!lowPerformance && (
           <>
             <Circle cx={width * 0.2} cy={height * 0.28} r={3} color={palette.lilac} />
@@ -176,12 +273,9 @@ export function OkeyTable({
           </>
         )}
       </Canvas>
-      <View style={styles.centerPile} accessible accessibilityLabel={wallLabel}>
-        <Text style={styles.wallCount}>{state.wall.length}</Text>
-        <Text style={styles.wallLabel}>{wallLabel}</Text>
-      </View>
+      <DraggableWall count={state.wall.length} label={wallLabel} enabled={wallDrawEnabled} reducedMotion={reducedMotion || lowPerformance} dropDirection={wallDropDirection} onDraw={onWallDraw} />
       <View style={[styles.indicator, compact && styles.indicatorCompact]} accessible accessibilityLabel={t('a11y.tile', { color: t(`color.${(indicatorTile ?? state.indicatorTile).color ?? 'black'}`), number: (indicatorTile ?? state.indicatorTile).number })}>
-        <TileFace tile={indicatorTile ?? state.indicatorTile} size={compact ? 20 : 25} />
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><TileFace tile={indicatorTile ?? state.indicatorTile} size={compact ? 20 : 25} /></View>
       </View>
       {state.tableMelds.length > 0 && (
         <View style={[styles.meldArea, compact && styles.meldAreaCompact]}>
@@ -208,7 +302,7 @@ export function OkeyTable({
             ))}
         </View>
       ))}
-      {isWinner && <WinnerGlow winnerId={state.winnerId ?? ''} reducedMotion={reducedMotion || lowPerformance} />}
+      {isWinner && <WinnerGlow winnerId={state.winnerId ?? ''} label={winnerLabel} reducedMotion={reducedMotion} lowPerformance={lowPerformance} />}
       {!lowPerformance && giftEvent !== undefined && <GiftFlight event={giftEvent} width={width} height={height} reducedMotion={reducedMotion} />}
     </View>
   );
@@ -216,6 +310,7 @@ export function OkeyTable({
 
 const styles = StyleSheet.create({
   root: { alignSelf: 'center', overflow: 'hidden' },
+  kahvehaneBackdrop: { opacity: 0.34 },
   seat: { position: 'absolute', alignItems: 'center', maxWidth: 84 },
   name: { color: palette.pearl, fontSize: 11, fontWeight: '700', marginTop: 2, maxWidth: 78 },
   activeName: { color: palette.aqua },
@@ -226,6 +321,8 @@ const styles = StyleSheet.create({
     position: 'absolute', left: '42%', top: '40%', width: '16%', minWidth: 54, aspectRatio: 1.25, borderRadius: radius.sm,
     backgroundColor: palette.tileIvory, alignItems: 'center', justifyContent: 'center', shadowColor: palette.black, shadowOpacity: 0.3, shadowRadius: 8,
   },
+  actionableWall: { borderWidth: 1, borderColor: palette.aqua, shadowColor: palette.aqua, shadowOpacity: 0.36 },
+  wallPressable: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' },
   wallCount: { color: palette.ink, fontSize: 17, fontWeight: '900' },
   wallLabel: { color: palette.mutedLight, fontSize: 8, fontWeight: '800', letterSpacing: 1 },
   indicator: { position: 'absolute', left: '31%', top: '44%', padding: 3, borderRadius: radius.sm, backgroundColor: 'rgba(248,246,241,0.14)' },
@@ -233,7 +330,12 @@ const styles = StyleSheet.create({
   meldArea: { position: 'absolute', left: '24%', right: '24%', top: '25%', alignItems: 'center', gap: 4 },
   meldAreaCompact: { left: '27%', right: '27%', top: '27%' },
   meld: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: radius.sm, backgroundColor: 'rgba(10,16,40,0.32)' },
+  meldTiles: { flexDirection: 'row', gap: 2 },
   gift: { position: 'absolute', width: 46, height: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.inkRaised, borderColor: palette.lilac, borderWidth: 1, overflow: 'hidden' },
   giftImage: { width: 42, height: 42 },
-  winnerGlow: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(41,225,214,0.08)', borderWidth: 2, borderColor: 'rgba(184,155,255,0.7)', borderRadius: radius.lg },
+  winnerGlow: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(41,225,214,0.08)', borderWidth: 2, borderColor: 'rgba(184,155,255,0.7)', borderRadius: radius.lg },
+  winnerParticles: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  winnerParticle: { position: 'absolute', width: 5, height: 5, borderRadius: radius.pill, opacity: 0.8 },
+  winnerCard: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: radius.pill, backgroundColor: 'rgba(10,16,40,0.82)', borderWidth: 1, borderColor: palette.aqua },
+  winnerLabel: { color: palette.pearl, fontSize: 16, fontWeight: '900' },
 });

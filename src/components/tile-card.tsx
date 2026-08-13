@@ -20,9 +20,12 @@ interface TileCardProps {
   onPress(): void;
   onMove(delta: number): void;
   reducedMotion: boolean;
+  theme?: 'luma' | 'kahvehane';
+  rowStride?: number;
+  rowStep?: number;
 }
 
-export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion }: TileCardProps) {
+export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion, theme = 'luma', rowStride = 0, rowStep = 1 }: TileCardProps) {
   const { t } = useTranslation();
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -30,10 +33,12 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
     .activeOffsetX([-8, 8])
     .onUpdate((event) => {
       translateX.value = event.translationX;
-      translateY.value = reducedMotion ? 0 : Math.min(0, event.translationY);
+      translateY.value = reducedMotion ? 0 : Math.max(-rowStep, Math.min(rowStep, event.translationY));
     })
     .onEnd((event) => {
-      const delta = Math.round(event.translationX / Math.max(width, 1));
+      const columnDelta = Math.round(event.translationX / Math.max(width, 1));
+      const rowDelta = rowStride === 0 ? 0 : Math.round(event.translationY / Math.max(rowStep, 1)) * rowStride;
+      const delta = columnDelta + rowDelta;
       if (delta !== 0) scheduleOnRN(onMove, delta);
       translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20, stiffness: 260 });
       translateY.value = reducedMotion ? 0 : withSpring(0, { damping: 20, stiffness: 260 });
@@ -61,9 +66,11 @@ export function TileCard({ tile, selected, width, onPress, onMove, reducedMotion
               height,
               borderColor: selected ? palette.aqua : palette.tileBorder,
               shadowColor: selected ? palette.aqua : palette.black,
+              backgroundColor: theme === 'kahvehane' ? '#F6EEDB' : palette.tileIvory,
             },
           ]}
         >
+          {theme === 'kahvehane' && <View pointerEvents="none" style={styles.patina} />}
           <View style={[styles.glyph, { backgroundColor: tile.kind === 'false_joker' ? palette.lilac : inkByColor[tile.color ?? 'black'] }]} />
           <Text
             adjustsFontSizeToFit
@@ -109,4 +116,5 @@ const styles = StyleSheet.create({
     letterSpacing: -0.8,
   },
   underline: { width: 16, height: 3, borderRadius: 2 },
+  patina: { position: 'absolute', left: 5, top: 6, width: 2, height: 2, borderRadius: 1, backgroundColor: 'rgba(126,87,48,0.22)' },
 });

@@ -35,6 +35,15 @@ export interface GiftReceipt {
   readonly duplicate: boolean;
 }
 
+export function nextGiftId(roomId: string, now: number, history: readonly Pick<GiftReceipt, 'id'>[]): string {
+  const base = `gift-${roomId}-${String(now)}`;
+  const used = new Set(history.map((receipt) => receipt.id));
+  if (!used.has(base)) return base;
+  let suffix = 1;
+  while (used.has(`${base}-${String(suffix)}`)) suffix += 1;
+  return `${base}-${String(suffix)}`;
+}
+
 const HOUR_MS = 60 * 60 * 1000;
 const COOLDOWN_MS = 5 * 1000;
 const DAILY_CAP = 5000;
@@ -60,7 +69,13 @@ export class InMemoryGiftService {
   public constructor(
     private readonly ledger: InMemoryChipLedger,
     private readonly policy: GiftPolicy,
-  ) {}
+    history: readonly Omit<GiftReceipt, 'duplicate'>[] = [],
+  ) {
+    for (const gift of history) {
+      this.giftsByKey.set(gift.id, gift);
+      this.gifts.push(gift);
+    }
+  }
 
   public send(input: SendGiftInput): GiftReceipt {
     if (!Number.isSafeInteger(input.now) || input.now < 0) throw new Error('Gift time must be a non-negative safe integer');

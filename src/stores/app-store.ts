@@ -3,10 +3,14 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { i18n } from '../i18n';
 import { calculateDailyClaim } from '../services/economy';
+import type { GiftReceipt } from '../services/gifts';
+
+type PersistedGiftReceipt = Omit<GiftReceipt, 'duplicate'>;
 
 interface AppStore {
   language: 'tr' | 'en';
   appearance: 'light' | 'dark';
+  tableTheme: 'luma' | 'kahvehane';
   reducedMotion: boolean;
   lowPerformance: boolean;
   musicPlaying: boolean;
@@ -17,11 +21,16 @@ interface AppStore {
   ambientEnabled: boolean;
   ambientVolume: number;
   chips: number;
+  playerLevel: number;
   dailyStreak: number;
   lastDailyClaim?: string;
   avatarIndex: number;
+  giftHistory: PersistedGiftReceipt[];
+  blockedUserIds: string[];
+  settledMockMatches: string[];
   setLanguage(language: 'tr' | 'en'): void;
   toggleAppearance(): void;
+  setTableTheme(theme: 'luma' | 'kahvehane'): void;
   toggleReducedMotion(): void;
   toggleLowPerformance(): void;
   toggleMusic(): void;
@@ -32,7 +41,9 @@ interface AppStore {
   toggleAmbient(): void;
   setAmbientVolume(volume: number): void;
   claimDaily(today: string): number;
-  spendChips(amount: number): boolean;
+  setMockChipBalance(balance: number): void;
+  recordGift(receipt: PersistedGiftReceipt): void;
+  applyMockMatchSettlement(matchId: string, net: number): void;
   selectAvatar(index: number): void;
 }
 
@@ -41,6 +52,7 @@ export const useAppStore = create<AppStore>()(
     (set, get) => ({
       language: i18n.language === 'tr' ? 'tr' : 'en',
       appearance: 'dark',
+      tableTheme: 'luma',
       reducedMotion: false,
       lowPerformance: false,
       musicPlaying: false,
@@ -51,13 +63,18 @@ export const useAppStore = create<AppStore>()(
       ambientEnabled: false,
       ambientVolume: 0.12,
       chips: 5000,
+      playerLevel: 7,
       dailyStreak: 0,
       avatarIndex: 0,
+      giftHistory: [],
+      blockedUserIds: [],
+      settledMockMatches: [],
       setLanguage: (language) => {
         void i18n.changeLanguage(language);
         set({ language });
       },
       toggleAppearance: () => set((state) => ({ appearance: state.appearance === 'dark' ? 'light' : 'dark' })),
+      setTableTheme: (tableTheme) => set({ tableTheme }),
       toggleReducedMotion: () => set((state) => ({ reducedMotion: !state.reducedMotion })),
       toggleLowPerformance: () => set((state) => ({ lowPerformance: !state.lowPerformance })),
       toggleMusic: () => set((state) => ({ musicPlaying: !state.musicPlaying })),
@@ -77,12 +94,17 @@ export const useAppStore = create<AppStore>()(
         set({ lastDailyClaim: result.lastClaimDay, dailyStreak: result.streak, chips: state.chips + result.reward });
         return result.reward;
       },
-      spendChips: (amount) => {
-        const state = get();
-        if (!Number.isSafeInteger(amount) || amount <= 0 || state.chips < amount) return false;
-        set({ chips: state.chips - amount });
-        return true;
+      setMockChipBalance: (balance) => {
+        if (!Number.isSafeInteger(balance) || balance < 0) return;
+        set({ chips: balance });
       },
+      recordGift: (receipt) => set((state) => state.giftHistory.some((entry) => entry.id === receipt.id)
+        ? state
+        : { giftHistory: [...state.giftHistory, receipt] }),
+      applyMockMatchSettlement: (matchId, net) => set((state) => {
+        if (state.settledMockMatches.includes(matchId) || !Number.isSafeInteger(net) || state.chips + net < 0) return state;
+        return { chips: state.chips + net, settledMockMatches: [...state.settledMockMatches, matchId] };
+      }),
       selectAvatar: (avatarIndex) => set({ avatarIndex }),
     }),
     {
@@ -91,6 +113,7 @@ export const useAppStore = create<AppStore>()(
       partialize: (state) => ({
         language: state.language,
         appearance: state.appearance,
+        tableTheme: state.tableTheme,
         reducedMotion: state.reducedMotion,
         lowPerformance: state.lowPerformance,
         musicPlaying: state.musicPlaying,
@@ -101,9 +124,13 @@ export const useAppStore = create<AppStore>()(
         ambientEnabled: state.ambientEnabled,
         ambientVolume: state.ambientVolume,
         chips: state.chips,
+        playerLevel: state.playerLevel,
         dailyStreak: state.dailyStreak,
         lastDailyClaim: state.lastDailyClaim,
         avatarIndex: state.avatarIndex,
+        giftHistory: state.giftHistory,
+        blockedUserIds: state.blockedUserIds,
+        settledMockMatches: state.settledMockMatches,
       }),
     },
   ),

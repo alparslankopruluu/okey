@@ -18,6 +18,10 @@ export const images = {
     require('../assets/game/avatars/v2/avatar-12.png') as ImageSourcePropType,
   ],
   rack: require('../assets/game/racks/luma-rack-v1.png') as ImageSourcePropType,
+  themes: {
+    kahvehaneStyleFrame: require('../assets/concepts/kahvehane/kahvehane-style-frame-v1.png') as ImageSourcePropType,
+    kahvehaneRack: require('../assets/game/themes/kahvehane/kahvehane-rack-v1.png') as ImageSourcePropType,
+  },
   gifts: {
     tea: require('../assets/game/gifts/gift-tea-v1.png') as ImageSourcePropType,
     coffee: require('../assets/game/gifts/gift-coffee-v1.png') as ImageSourcePropType,

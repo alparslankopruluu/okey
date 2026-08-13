@@ -1,12 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import {
   GameRuleError,
   applyCommand,
   createGame,
+  createMatch,
   findOpeningMelds101,
   findTableExtension,
   findWinningMelds,
   playDeterministicBotTurn,
+  recordMatchRound,
+  settleMatchEconomy,
   type GameState,
   type GameVariant,
 } from '@luma/game-core';
@@ -34,7 +38,9 @@ import { useAppStore } from '../../src/stores/app-store';
 import { palette, radius, space } from '../../src/theme/tokens';
 import { useLumaAudio } from '../../src/audio/audio-provider';
 import { GiftSheet, giftImageKey } from '../../src/components/gift-sheet';
-import { GIFT_CATALOG, type GiftId } from '../../src/services/gifts';
+import { GIFT_CATALOG, nextGiftId, type GiftId } from '../../src/services/gifts';
+import { LocalGiftAuthority } from '../../src/services/local-gift-authority';
+import { roomEconomyMode, type MockEconomyMode, type RoomEntry } from '../../src/services/room-catalog';
 
 const PLAYERS = ['p0', 'p1', 'p2', 'p3'] as const;
 const LANDSCAPE_TABLE_SHARE = 0.56;
@@ -54,9 +60,12 @@ export default function GameScreen() {
   const { playEffect, setTableAudio, setVoiceActive } = useLumaAudio();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ variant?: string; seed?: string }>();
+  const params = useLocalSearchParams<{ variant?: string; seed?: string; tableTheme?: string; economyMode?: string; entryChips?: string; roomId?: string }>();
   const variant: GameVariant = params.variant === '101' ? '101' : 'classic';
   const seed = Number.isFinite(Number(params.seed)) ? Number(params.seed) : 20260811;
+  const requestedEntry = Number(params.entryChips);
+  const entryChips: RoomEntry = requestedEntry === 100 || requestedEntry === 500 || requestedEntry === 1000 ? requestedEntry : 0;
+  const economyMode: MockEconomyMode = roomEconomyMode(entryChips);
   const identity = useMemo(() => offlineMatchIdentity(variant, seed), [seed, variant]);
   const persistenceKey = `luma-match-v1-${variant}-${seed}`;
   const [game, setGame] = useState(() => newMatch(variant, seed));
@@ -70,15 +79,29 @@ export default function GameScreen() {
   const [talking, setTalking] = useState(false);
   const [giftSeat, setGiftSeat] = useState<number>();
   const [giftEvent, setGiftEvent] = useState<TableGiftEvent>();
+  const [giftCooldownUntil, setGiftCooldownUntil] = useState<number>();
   const reducedMotion = useAppStore((state) => state.reducedMotion);
   const lowPerformance = useAppStore((state) => state.lowPerformance);
+  const tableTheme = useAppStore((state) => state.tableTheme);
+  const roomTableTheme = params.tableTheme === 'kahvehane' ? 'kahvehane' : tableTheme;
   const musicPlaying = useAppStore((state) => state.musicPlaying);
   const toggleMusic = useAppStore((state) => state.toggleMusic);
-  const spendChips = useAppStore((state) => state.spendChips);
+  const chips = useAppStore((state) => state.chips);
+  const setMockChipBalance = useAppStore((state) => state.setMockChipBalance);
+  const giftHistory = useAppStore((state) => state.giftHistory);
+  const blockedUserIds = useAppStore((state) => state.blockedUserIds);
+  const recordGift = useAppStore((state) => state.recordGift);
+  const applyMockMatchSettlement = useAppStore((state) => state.applyMockMatchSettlement);
   const botBusy = useRef(false);
   const commandIndex = useRef(0);
   const hydrationRequest = useRef<symbol | undefined>(undefined);
-  const audioState = useRef<{ sequence: number; discards: number; melds: number; penalties: number; finished: boolean } | undefined>(undefined);
+  const audioState = useRef<{ sequence: number; discards: number; melds: number; penalties: number; finished: boolean; turnIndex: number; winnerId?: string | undefined } | undefined>(undefined);
+  const localGiftAuthority = useRef<LocalGiftAuthority | undefined>(undefined);
+  if (localGiftAuthority.current === undefined) {
+    localGiftAuthority.current = new LocalGiftAuthority(chips, giftHistory, {
+      isBlocked: (_senderId, recipientId) => blockedUserIds.includes(recipientId),
+    });
+  }
   const playerNames = useMemo(() => [t('game.you'), 'Ada', 'Mert', 'Lina'] as const, [t]);
 
   const userRack = useMemo(() => game.players[0]?.rack ?? [], [game.players]);
@@ -129,17 +152,19 @@ export default function GameScreen() {
       && game.turnIndex === 0
       && top?.pickedBy === undefined
       && (variant === 'classic' || currentPlayer?.opened === true);
-    return [...byPlayer.values()].map((record) => ({
-      playerId: record.playerId,
-      tile: record.tile,
-      actionable: canTakeTop && record.sequence === top?.sequence,
-      accessibilityLabel: t('a11y.lastDiscard', {
-        player: playerNames[game.players.findIndex((player) => player.id === record.playerId)] ?? record.playerId,
-        tile: record.tile.kind === 'false_joker'
-          ? t('a11y.falseJoker')
-          : t('a11y.tile', { color: t(`color.${record.tile.color ?? 'black'}`), number: record.tile.number }),
-      }),
-    }));
+    return [...byPlayer.values()].map((record) => {
+      const actionable = canTakeTop && record.sequence === top?.sequence;
+      const player = playerNames[game.players.findIndex((candidate) => candidate.id === record.playerId)] ?? record.playerId;
+      const tile = record.tile.kind === 'false_joker'
+        ? t('a11y.falseJoker')
+        : t('a11y.tile', { color: t(`color.${record.tile.color ?? 'black'}`), number: record.tile.number });
+      return {
+        playerId: record.playerId,
+        tile: record.tile,
+        actionable,
+        accessibilityLabel: t(actionable ? 'a11y.takeDiscard' : 'a11y.lastDiscard', { player, tile }),
+      };
+    });
   }, [game, playerNames, t, variant]);
 
   useEffect(() => {
@@ -170,6 +195,22 @@ export default function GameScreen() {
   }, [game, hydratedKey, persistenceKey]);
 
   useEffect(() => {
+    if (game.phase !== 'round_finished' || game.settlement === undefined || entryChips === 0) return;
+    const matchId = `${params.roomId ?? identity.gameId}:${String(seed)}:${economyMode}`;
+    const match = createMatch({
+      gameId: matchId,
+      variant,
+      playerIds: PLAYERS,
+      seed,
+      config: { economyMode },
+    });
+    const completed = recordMatchRound(match, game.settlement);
+    const economy = settleMatchEconomy(completed);
+    const playerEntry = economy.entries.find((entry) => entry.playerId === 'p0');
+    if (playerEntry !== undefined) applyMockMatchSettlement(matchId, playerEntry.net);
+  }, [applyMockMatchSettlement, economyMode, entryChips, game.phase, game.settlement, identity.gameId, params.roomId, seed, variant]);
+
+  useEffect(() => {
     setTableAudio(true, seed);
     return () => setTableAudio(false, seed);
   }, [seed, setTableAudio]);
@@ -185,17 +226,32 @@ export default function GameScreen() {
       sequence: game.sequence,
       discards: game.discardHistory.length,
       melds: game.tableMelds.length,
-      penalties: game.players.reduce((total, player) => total + (player.penalties ?? 0), 0),
+      penalties: game.players[0]?.penalties ?? 0,
       finished: game.phase === 'round_finished',
+      turnIndex: game.turnIndex,
+      winnerId: game.winnerId,
     };
     const previous = audioState.current;
     audioState.current = next;
     if (previous === undefined || next.sequence <= previous.sequence) return;
-    if (next.discards > previous.discards) playEffect('tileDiscard');
-    else if (next.melds > previous.melds) playEffect('meldOpen');
-    else playEffect('tilePickup');
-    if (next.penalties > previous.penalties) playEffect('warning');
-    if (next.finished && !previous.finished) playEffect('win');
+    if (next.discards > previous.discards) {
+      playEffect('tileDiscard');
+      if (previous.turnIndex === 0) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else if (next.melds > previous.melds) {
+      playEffect('meldOpen');
+      if (previous.turnIndex === 0) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } else {
+      playEffect('tilePickup');
+      if (previous.turnIndex === 0) void Haptics.selectionAsync();
+    }
+    if (next.penalties > previous.penalties) {
+      playEffect('warning');
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
+    if (next.finished && !previous.finished) {
+      playEffect('win');
+      if (next.winnerId === 'p0') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
   }, [game, hydratedKey, persistenceKey, playEffect]);
 
   useEffect(() => {
@@ -215,7 +271,7 @@ export default function GameScreen() {
           botBusy.current = false;
         }
       });
-    }, reducedMotion ? 80 : 430);
+    }, reducedMotion ? 720 : 900 + (game.sequence % 4) * 110);
     return () => {
       clearTimeout(timer);
       botBusy.current = false;
@@ -311,12 +367,37 @@ export default function GameScreen() {
   const sendGift = (giftId: GiftId) => {
     if (giftSeat === undefined || giftSeat === 0) return;
     const gift = GIFT_CATALOG.find((item) => item.id === giftId);
-    if (gift === undefined || !spendChips(gift.chipCost)) {
-      setNotice(t('gift.insufficient'));
+    if (gift === undefined) return;
+    try {
+      const recipient = game.players[giftSeat];
+      if (recipient === undefined) return;
+      const now = Date.now();
+      const receipt = localGiftAuthority.current?.send({
+        idempotencyKey: nextGiftId(identity.gameId, now, giftHistory),
+        recipientId: recipient.id,
+        giftId,
+        roomId: identity.gameId,
+        now,
+      });
+      if (receipt === undefined) return;
+      recordGift({
+        id: receipt.id,
+        senderId: receipt.senderId,
+        recipientId: receipt.recipientId,
+        giftId: receipt.giftId,
+        roomId: receipt.roomId,
+        chipCost: receipt.chipCost,
+        createdAt: receipt.createdAt,
+      });
+      setMockChipBalance(localGiftAuthority.current?.balance() ?? chips);
+      setGiftCooldownUntil(Date.now() + 5000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      setNotice(t(message.includes('negative') ? 'gift.insufficient' : 'gift.unavailable'));
       return;
     }
     setGiftEvent({
-      id: `gift-${commandIndex.current++}`,
+      id: `gift-flight-${commandIndex.current++}`,
       fromSeatIndex: 0,
       toSeatIndex: giftSeat,
       giftId: giftImageKey(giftId),
@@ -325,6 +406,7 @@ export default function GameScreen() {
     setGiftSeat(undefined);
     setNotice(t('gift.sent'));
     playEffect('gift');
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const isLandscape = width > height;
@@ -370,6 +452,10 @@ export default function GameScreen() {
       onDiscardPress={takeLatestDiscard}
       onSeatPress={(seatIndex) => { if (seatIndex !== 0) setGiftSeat(seatIndex); }}
       giftEvent={giftEvent}
+      theme={roomTableTheme}
+      wallDrawEnabled={game.phase === 'awaiting_draw' && game.turnIndex === 0 && !roundFinished}
+      onWallDraw={() => runUserCommand('draw')}
+      wallDropDirection={isLandscape ? 'right' : 'down'}
     />
   );
 
@@ -397,6 +483,7 @@ export default function GameScreen() {
         width={playColumnWidth}
         accessibilityLabel={t('a11y.rack')}
         reducedMotion={reducedMotion}
+        theme={roomTableTheme}
         onSelect={(tileId) => setSelectedId((current) => current === tileId ? undefined : tileId)}
         onMove={moveTile}
       />
@@ -526,6 +613,9 @@ export default function GameScreen() {
       <GiftSheet
         visible={giftSeat !== undefined}
         recipient={giftSeat === undefined ? '' : playerNames[giftSeat] ?? ''}
+        recipientAvatarIndex={giftSeat ?? 0}
+        balance={chips}
+        cooldownUntil={giftCooldownUntil}
         onClose={() => setGiftSeat(undefined)}
         onSend={sendGift}
       />

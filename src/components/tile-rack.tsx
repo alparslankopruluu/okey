@@ -11,6 +11,7 @@ interface TileRackProps {
   width: number;
   accessibilityLabel: string;
   reducedMotion: boolean;
+  theme?: 'luma' | 'kahvehane';
   onSelect(tileId: string): void;
   onMove(tileId: string, delta: number): void;
 }
@@ -25,6 +26,7 @@ export function TileRack({
   width,
   accessibilityLabel,
   reducedMotion,
+  theme = 'luma',
   onSelect,
   onMove,
 }: TileRackProps) {
@@ -47,13 +49,13 @@ export function TileRack({
       style={{ width, height: rackHeight, flexGrow: 0 }}
     >
       <LinearGradient
-        colors={[palette.rackTop, palette.rackBottom]}
+        colors={theme === 'kahvehane' ? ['#6B351B', '#2C150D'] : [palette.rackTop, palette.rackBottom]}
         end={{ x: 0.78, y: 1 }}
         start={{ x: 0.18, y: 0 }}
         style={[styles.frame, { width: contentWidth, height: rackHeight }]}
       >
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <Image resizeMode="stretch" source={images.rack} style={styles.rackAsset} />
+          <Image resizeMode="stretch" source={theme === 'kahvehane' ? images.themes.kahvehaneRack : images.rack} style={[styles.rackAsset, theme === 'kahvehane' && styles.kahvehaneRackAsset]} />
         </View>
         <View pointerEvents="none" style={styles.backGlow} />
         {rows.map((row, rowIndex) => (
@@ -66,6 +68,9 @@ export function TileRack({
                   selected={selectedId === tile.id}
                   width={tileWidth}
                   reducedMotion={reducedMotion}
+                  theme={theme}
+                  rowStride={columns}
+                  rowStep={tileHeight + 9}
                   onPress={() => onSelect(tile.id)}
                   onMove={(delta) => onMove(tile.id, delta)}
                 />
@@ -112,6 +117,7 @@ const styles = StyleSheet.create({
     height: '100%',
     opacity: 0.72,
   },
+  kahvehaneRackAsset: { opacity: 0.96 },
   shelf: { justifyContent: 'flex-end' },
   tileRow: { minHeight: 56, flexDirection: 'row', alignItems: 'flex-end', gap: TILE_GAP, zIndex: 2 },
   rail: {

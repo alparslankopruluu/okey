@@ -31,6 +31,12 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.theme')}</Text>
         <SettingRow title={t('settings.theme')} body={store.appearance === 'dark' ? 'Midnight' : 'Pearl'} value={store.appearance === 'dark'} onToggle={store.toggleAppearance} />
+        <Text style={[styles.sectionTitle, { color: colors.muted }]}>{t('settings.tableTheme')}</Text>
+        <View style={styles.row}>
+          <LumaButton label={t('settings.tableThemeLuma')} variant={store.tableTheme === 'luma' ? 'primary' : 'secondary'} onPress={() => store.setTableTheme('luma')} style={styles.flex} />
+          <LumaButton label={t('settings.tableThemeKahvehane')} variant={store.tableTheme === 'kahvehane' ? 'primary' : 'secondary'} onPress={() => store.setTableTheme('kahvehane')} style={styles.flex} />
+        </View>
+        <Text style={[styles.themeBody, { color: colors.muted }]}>{t('settings.tableThemeBody')}</Text>
         <SettingRow title={t('settings.motion')} value={store.reducedMotion} onToggle={store.toggleReducedMotion} />
         <SettingRow title={t('settings.performance')} value={store.lowPerformance} onToggle={store.toggleLowPerformance} />
       </View>
@@ -52,4 +58,5 @@ const styles = StyleSheet.create({
   section: { gap: space.sm },
   sectionTitle: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.1 },
   row: { flexDirection: 'row', gap: space.sm },
+  themeBody: { fontSize: 13, lineHeight: 19 },
 });
